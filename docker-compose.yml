@@ -1,0 +1,59 @@
+services:
+  gestor_carga:
+    build:
+      context: .
+      dockerfile: gestor_carga/Dockerfile
+    container_name: gestor_carga
+    ports:
+      - "5555:5555"   # REQ/REP
+      - "5556:5556"   # PUB/SUB
+
+  proceso_solicitante:
+    build:
+      context: .
+      dockerfile: proceso_solicitante/Dockerfile
+    container_name: proceso_solicitante
+    depends_on:
+      - gestor_carga
+
+  run_renovaciones:
+    build:
+      context: .
+      dockerfile: proceso_solicitante/Dockerfile
+    container_name: run_renovaciones
+    depends_on:
+      - gestor_carga
+    command: ["python", "run_renovaciones.py"]
+
+  actor_devolucion:
+    build:
+      context: .
+      dockerfile: actor_devolucion/Dockerfile
+    container_name: actor_devolucion
+    depends_on:
+      - gestor_carga
+
+  actor_renovacion:
+    build:
+      context: .
+      dockerfile: actor_renovacion/Dockerfile
+    container_name: actor_renovacion
+    depends_on:
+      - gestor_carga
+      - gestor_almacenamiento
+
+  gestor_almacenamiento:
+    build:
+      context: .
+      dockerfile: gestor_almacenamiento/Dockerfile
+    container_name: gestor_almacenamiento
+    ports:
+      - "5570:5570"
+
+  actor_prestamo:
+    build:
+      context: .
+      dockerfile: actor_prestamo/Dockerfile
+    container_name: actor_prestamo
+    depends_on:
+      - gestor_carga
