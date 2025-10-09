@@ -5,7 +5,6 @@ WORKDIR /app
 # Copiar common (para herencias y mensajes)
 COPY ./common /app/common
 
-# Copiar el código del servicio
 # Copiar el código del servicio (solo la carpeta del servicio)
 COPY ./actor_devolucion /app
 
