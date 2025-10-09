@@ -2,58 +2,112 @@ services:
   gestor_carga:
     build:
       context: .
-      dockerfile: gestor_carga/Dockerfile
+      dockerfile: ./gestor_carga/Dockerfile
     container_name: gestor_carga
     ports:
       - "5555:5555"   # REQ/REP
       - "5556:5556"   # PUB/SUB
-
-  proceso_solicitante:
-    build:
-      context: .
-      dockerfile: proceso_solicitante/Dockerfile
-    container_name: proceso_solicitante
-    depends_on:
-      - gestor_carga
-
-  run_renovaciones:
-    build:
-      context: .
-      dockerfile: proceso_solicitante/Dockerfile
-    container_name: run_renovaciones
-    depends_on:
-      - gestor_carga
-    command: ["python", "run_renovaciones.py"]
-
-  actor_devolucion:
-    build:
-      context: .
-      dockerfile: actor_devolucion/Dockerfile
-    container_name: actor_devolucion
-    depends_on:
-      - gestor_carga
-
-  actor_renovacion:
-    build:
-      context: .
-      dockerfile: actor_renovacion/Dockerfile
-    container_name: actor_renovacion
-    depends_on:
-      - gestor_carga
-      - gestor_almacenamiento
+    networks:
+      - backend
 
   gestor_almacenamiento:
     build:
       context: .
-      dockerfile: gestor_almacenamiento/Dockerfile
+      dockerfile: ./gestor_almacenamiento/Dockerfile
     container_name: gestor_almacenamiento
     ports:
       - "5570:5570"
+    networks:
+      - backend
+
+  proceso_solicitante:
+    build:
+      context: .
+      dockerfile: ./proceso_solicitante/Dockerfile
+    container_name: proceso_solicitante
+    depends_on:
+      - gestor_carga
+    networks:
+      - backend
+
+  run_renovaciones:
+    build:
+      context: .
+      dockerfile: ./proceso_solicitante/Dockerfile
+    container_name: run_renovaciones
+    depends_on:
+      - gestor_carga
+    command: ["python", "run_renovaciones.py"]
+    networks:
+      - backend
+
+  actor_devolucion:
+    build:
+      context: .
+      dockerfile: ./actor_devolucion/Dockerfile
+    container_name: actor_devolucion
+    depends_on:
+      - gestor_carga
+    networks:
+      - backend
+
+  actor_renovacion:
+    build:
+      context: .
+      dockerfile: ./actor_renovacion/Dockerfile
+    container_name: actor_renovacion
+    depends_on:
+      - gestor_carga
+      - gestor_almacenamiento
+    networks:
+      - backend
 
   actor_prestamo:
     build:
       context: .
-      dockerfile: actor_prestamo/Dockerfile
+      dockerfile: ./actor_prestamo/Dockerfile
     container_name: actor_prestamo
     depends_on:
       - gestor_carga
+    networks:
+      - backend
+
+  locust_test:
+    build:
+      context: .
+      dockerfile: ./proceso_solicitante/Dockerfile 
+    container_name: locust
+    working_dir: /app
+    command: >
+      python run_pruebas_locust.py
+    volumes:
+      - ./proceso_solicitante:/app 
+      - ./test_results:/app/test_results
+
+    ports:
+      - "8089:8089"
+    depends_on:
+      - gestor_carga
+    networks:
+      - backend
+
+  locust:
+    build:
+      context: .  
+      dockerfile: ./proceso_solicitante/Dockerfile 
+    container_name: locust
+    working_dir: /app
+    command: >
+      locust -f locustfile.py --web-host 0.0.0.0
+    volumes:
+      - ./proceso_solicitante:/app 
+    ports:
+      - "8089:8089"
+    depends_on:
+      - gestor_carga
+    networks:
+      - backend
+
+networks:
+  backend:
+    driver: bridge

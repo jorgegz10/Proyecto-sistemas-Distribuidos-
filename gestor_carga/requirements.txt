@@ -1,1 +1,1 @@
-pyzmqs
+pyzmq
