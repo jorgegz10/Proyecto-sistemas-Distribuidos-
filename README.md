@@ -166,3 +166,9 @@ Si quieres separar componentes en distintas máquinas con Docker, tendrás que d
 - Los scripts imprimen mensajes de conexión (p. ej. a qué endpoint ZeroMQ se conectan). Revisa esas salidas para comprobar si usan la dirección esperada.
 - Si un REQ falla, revisa timeouts (hay RCVTIMEO/SNDTIMEO configurados) y errores por socket cerrado.
 
+## Video de Presentación del Proyecto
+
+https://drive.google.com/drive/folders/1ObY_77QrREVQ9Y1TRCPwtT7wcZvVRzA3?usp=drive_link
+
+
+
