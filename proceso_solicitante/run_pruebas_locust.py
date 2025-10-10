@@ -13,8 +13,8 @@ escenarios = [
 
 for usuarios, spawn_rate, duracion in escenarios:
 # Timestamp actual para nombrar los archivos de resultados
-timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-nombre_archivo = f"results_{usuarios}users_{timestamp}"
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    nombre_archivo = f"results_{usuarios}users_{timestamp}"
 
 
 print(f"\n Ejecutando prueba con {usuarios} usuarios por {duracion}...")

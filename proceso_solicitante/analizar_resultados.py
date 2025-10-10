@@ -1,18 +1,22 @@
 import pandas as pd
+
+
+
+
+
+
 for archivo in archivos:
-df = pd.read_csv(archivo)
-# Filtrar fila con métricas agregadas
-total = df[df["Name"] == "Aggregated"]
-if total.empty:
-continue
-
-
-# Extraer número de usuarios desde el nombre del archivo
-nombre = archivo.stem
-try:
-usuarios = int(nombre.split("_")[1].replace("users", ""))
-except Exception:
-usuarios = None
+    df = pd.read_csv(archivo)
+    # Filtrar fila con métricas agregadas
+    total = df[df["Name"] == "Aggregated"]
+    if total.empty:
+        continue
+    # Extraer número de usuarios desde el nombre del archivo
+    nombre = archivo.stem
+    try:
+        usuarios = int(nombre.split("_")[1].replace("users", ""))
+    except Exception:
+        usuarios = None
 
 
 # Guardar estadísticas relevantes
@@ -27,7 +31,7 @@ rows.append({
 
 # Validación
 if not rows:
-raise SystemExit("No hubo filas 'Aggregated' en los CSV. Revisa que Locust haya terminado correctamente.")
+    raise SystemExit("No hubo filas 'Aggregated' en los CSV. Revisa que Locust haya terminado correctamente.")
 
 
 # Crear dataframe final y guardarlo como CSV
