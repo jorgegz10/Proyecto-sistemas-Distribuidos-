@@ -1,3 +1,4 @@
+import os
 import zmq
 import json
 from typing import Dict, Any
@@ -50,7 +51,18 @@ def main():
 
     # SUB socket para eventos pub/sub
     socket_sub = context.socket(zmq.SUB)
-    socket_sub.connect("tcp://gestor_carga:5556")
+    # Allow configuring the gestor_carga pub endpoint so this actor can be remote.
+    gc_pub_addr = None
+    # Check a full address env var first, then host/port pair, then default
+    if os.getenv("GESTOR_CARGA_PUB_ADDR"):
+        gc_pub_addr = os.getenv("GESTOR_CARGA_PUB_ADDR")
+    elif os.getenv("GESTOR_CARGA_HOST") and os.getenv("GESTOR_CARGA_PUB_PORT"):
+        gc_pub_addr = f"tcp://{os.getenv('GESTOR_CARGA_HOST')}:{os.getenv('GESTOR_CARGA_PUB_PORT')}"
+    else:
+        gc_pub_addr = "tcp://gestor_carga:5556"
+
+    print(f"[ActorRenovacion] Conectando PUB/SUB a {gc_pub_addr}")
+    socket_sub.connect(gc_pub_addr)
     socket_sub.setsockopt_string(zmq.SUBSCRIBE, ActorRenovacion.topic)
 
     print("[ActorRenovacion] Suscrito al tópico 'renovacion', esperando mensajes...")

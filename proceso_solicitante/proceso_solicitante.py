@@ -1,3 +1,4 @@
+import os
 import zmq
 from common.messaging.peticion import Peticion
 
@@ -18,7 +19,22 @@ def enviarPeticion(socket_req, operacion, data):
 def main():
     context = zmq.Context()
     socket_req = context.socket(zmq.REQ)
-    socket_req.connect("tcp://gestor_carga:5555")
+
+    # Allow running proceso_solicitante on a different machine by configuring
+    # the gestor_carga endpoint through environment variables.
+    # Priority: GESTOR_CARGA_ADDR > (GESTOR_CARGA_HOST + GESTOR_CARGA_PORT) > default
+    addr = os.getenv("GESTOR_CARGA_ADDR")
+    host = os.getenv("GESTOR_CARGA_HOST")
+    port = os.getenv("GESTOR_CARGA_PORT")
+    if addr:
+        connect_addr = addr
+    elif host and port:
+        connect_addr = f"tcp://{host}:{port}"
+    else:
+        connect_addr = "tcp://gestor_carga:5555"
+
+    print(f"[Solicitante] Conectando a gestor_carga en {connect_addr}")
+    socket_req.connect(connect_addr)
 
     try:
         while True:
