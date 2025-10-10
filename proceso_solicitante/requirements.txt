@@ -1,2 +1,5 @@
-pyzmq
-locust
+locust # Framework de pruebas de carga
+pyzmq # Soporte para ZMQ (mensajería entre servicios)
+pandas # Lectura y manipulación de archivos CSV
+matplotlib # Generación de gráficos
+numpy # Operaciones numéricas (requerido por matplotlib)

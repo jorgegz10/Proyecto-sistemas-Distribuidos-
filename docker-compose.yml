@@ -1,15 +1,19 @@
+# docker-compose.yml documentado
+
 services:
+  # Servicio principal que gestiona las comunicaciones ZMQ y balancea carga
   gestor_carga:
     build:
       context: .
       dockerfile: ./gestor_carga/Dockerfile
     container_name: gestor_carga
     ports:
-      - "5555:5555"   # REQ/REP
-      - "5556:5556"   # PUB/SUB
+      - "5555:5555"  # REQ/REP ZMQ
+      - "5556:5556"  # PUB/SUB ZMQ
     networks:
       - backend
 
+  # Servicio que simula un sistema de almacenamiento (e.g., base de datos)
   gestor_almacenamiento:
     build:
       context: .
@@ -20,6 +24,7 @@ services:
     networks:
       - backend
 
+  # Proceso que inicia solicitudes y simula tráfico a los actores
   proceso_solicitante:
     build:
       context: .
@@ -30,6 +35,7 @@ services:
     networks:
       - backend
 
+  # Ejecuta renovaciones automáticamente como tarea de fondo
   run_renovaciones:
     build:
       context: .
@@ -41,6 +47,7 @@ services:
     networks:
       - backend
 
+  # Actor encargado de las devoluciones
   actor_devolucion:
     build:
       context: .
@@ -51,6 +58,7 @@ services:
     networks:
       - backend
 
+  # Actor que ejecuta las renovaciones
   actor_renovacion:
     build:
       context: .
@@ -62,6 +70,7 @@ services:
     networks:
       - backend
 
+  # Actor que atiende solicitudes de préstamo
   actor_prestamo:
     build:
       context: .
@@ -72,42 +81,59 @@ services:
     networks:
       - backend
 
-  locust_test:
+  # Servicio que ejecuta pruebas de carga automáticamente usando Locust
+  locust_tests:
     build:
       context: .
       dockerfile: ./proceso_solicitante/Dockerfile 
-    container_name: locust
+    container_name: locust_tests
     working_dir: /app
-    command: >
-      python run_pruebas_locust.py
+    command: python run_pruebas_locust.py
     volumes:
-      - ./proceso_solicitante:/app 
-      - ./test_results:/app/test_results
-
-    ports:
-      - "8089:8089"
+      - ./proceso_solicitante:/app  # Monta código fuente
+      - ./test_results:/test_results  # Carpeta donde se guardan CSV
     depends_on:
       - gestor_carga
+      - actor_prestamo
+      - actor_devolucion
+      - actor_renovacion
     networks:
       - backend
 
-  locust:
+  # Interfaz web de Locust para pruebas manuales (opcional)
+  locust_web:
     build:
       context: .  
       dockerfile: ./proceso_solicitante/Dockerfile 
-    container_name: locust
+    container_name: locust_web
     working_dir: /app
-    command: >
-      locust -f locustfile.py --web-host 0.0.0.0
+    command: locust -f locustfile.py --web-host 0.0.0.0
     volumes:
-      - ./proceso_solicitante:/app 
+      - ./proceso_solicitante:/app
     ports:
-      - "8089:8089"
+      - "8089:8089"  # Interfaz Web
     depends_on:
       - gestor_carga
     networks:
       - backend
 
+  # Servicio que analiza los resultados de las pruebas
+  analyzer:
+    build:
+      context: .
+      dockerfile: ./proceso_solicitante/Dockerfile  
+    container_name: analyzer
+    working_dir: /app
+    command: python analizar_resultados.py
+    volumes:
+      - ./proceso_solicitante:/app
+      - ./proceso_solicitante/test_results:/app/test_results
+    depends_on:
+      - locust_tests
+    networks:
+      - backend
+
+# Red compartida para permitir comunicación entre contenedores
 networks:
   backend:
     driver: bridge
