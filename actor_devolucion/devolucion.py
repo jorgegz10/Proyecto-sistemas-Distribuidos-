@@ -1,8 +1,11 @@
 from typing import Dict, Any
+import os
 import zmq  
 from common.actors.base import Actor
 
-GA_ENDPOINT = "tcp://gestor_almacenamiento:5570"  
+# Allow overriding the gestor_almacenamiento endpoint via env vars so this
+# actor can run on a different machine than the storage manager.
+GA_ENDPOINT = os.getenv("GESTOR_ALMACENAMIENTO_ADDR") or os.getenv("GESTOR_ALMACENAMIENTO") or "tcp://gestor_almacenamiento:5570"
 
 
 class Devolucion(Actor):
