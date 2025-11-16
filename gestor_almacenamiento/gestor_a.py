@@ -2,7 +2,7 @@ import os
 import zmq
 import psycopg2                      
 from psycopg2.extras import RealDictCursor
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # === Config DB desde variables de entorno ===
 DB_HOST = os.getenv("DB_HOST", "postgres")     
@@ -98,6 +98,96 @@ def aplicar_devolucion(conn, isbn, usuario):
         return {"error": str(e)}
 
 
+def procesar_prestamo(conn, isbn, usuario):
+    """
+    Procesa un nuevo préstamo de libro.
+    Verifica ejemplares disponibles y crea el préstamo.
+    
+    Args:
+        conn: Conexión a la base de datos
+        isbn: ISBN del libro a prestar
+        usuario: ID/nombre del usuario
+        
+    Returns:
+        Dict con status/error y detalles del préstamo
+    """
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # 1) Verificar que el libro existe y tiene ejemplares disponibles
+            cur.execute(
+                "SELECT ejemplares FROM libros WHERE isbn=%s;",
+                (isbn,)
+            )
+            libro = cur.fetchone()
+            
+            if not libro:
+                return {
+                    "error": "LibroNoEncontrado",
+                    "detalle": f"El libro con ISBN {isbn} no existe en el sistema"
+                }
+            
+            if libro["ejemplares"] <= 0:
+                return {
+                    "error": "SinEjemplaresDisponibles",
+                    "detalle": f"No hay ejemplares disponibles del libro {isbn}"
+                }
+            
+            # 2) Verificar que el usuario no tenga ya un préstamo activo de este libro
+            cur.execute(
+                "SELECT estado FROM prestamos WHERE isbn=%s AND usuario=%s;",
+                (isbn, usuario)
+            )
+            prestamo_existente = cur.fetchone()
+            
+            if prestamo_existente and prestamo_existente["estado"] == "ACTIVO":
+                return {
+                    "error": "PrestamoActivo",
+                    "detalle": f"El usuario {usuario} ya tiene un préstamo activo del libro {isbn}"
+                }
+            
+            # 3) Calcular fecha de devolución (14 días desde hoy)
+            fecha_prestamo = datetime.now()
+            fecha_devolucion = fecha_prestamo + timedelta(days=14)
+            
+            # 4) Crear o actualizar el préstamo
+            cur.execute("""
+                INSERT INTO prestamos (isbn, usuario, estado, fecha_devolucion, renovaciones)
+                VALUES (%s, %s, 'ACTIVO', %s, 0)
+                ON CONFLICT (isbn, usuario)
+                DO UPDATE SET estado='ACTIVO', 
+                              fecha_devolucion=%s,
+                              renovaciones=0;
+            """, (isbn, usuario, fecha_devolucion, fecha_devolucion))
+            
+            # 5) Decrementar ejemplares disponibles
+            cur.execute("""
+                UPDATE libros 
+                SET ejemplares = ejemplares - 1
+                WHERE isbn=%s;
+            """, (isbn,))
+        
+        conn.commit()
+        
+        return {
+            "status": "ok",
+            "detalle": "Préstamo registrado exitosamente",
+            "datos": {
+                "isbn": isbn,
+                "usuario": usuario,
+                "fecha_prestamo": fecha_prestamo.isoformat(),
+                "fecha_devolucion": fecha_devolucion.isoformat(),
+                "dias_prestamo": 14
+            }
+        }
+        
+    except Exception as e:
+        conn.rollback()
+        return {
+            "error": "ErrorProcesamiento",
+            "detalle": f"Error al procesar préstamo: {str(e)}"
+        }
+
+
 # ===== ZMQ REP Server =====
 def main():
     # ZMQ
@@ -133,6 +223,13 @@ def main():
                     resp = {"error": "ParametrosInvalidos"}
                 else:
                     resp = aplicar_devolucion(conn, isbn, usuario)
+
+            elif action == "procesar_prestamo":
+                isbn = req.get("isbn"); usuario = req.get("usuario")
+                if not isbn or not usuario:
+                    resp = {"error": "ParametrosInvalidos", "detalle": "ISBN y usuario son requeridos"}
+                else:
+                    resp = procesar_prestamo(conn, isbn, usuario)
 
             else:
                 resp = {"error": "accion_desconocida"}
