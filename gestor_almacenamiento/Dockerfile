@@ -15,6 +15,6 @@ COPY ./gestor_almacenamiento/requirements.txt /app/requirements.txt
 # Instalar dependencias
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Arranque
-CMD ["python", "gestor_a.py"]
+# Arranque (con -u para deshabilitar buffering de Python)
+CMD ["python", "-u", "gestor_a.py"]
 

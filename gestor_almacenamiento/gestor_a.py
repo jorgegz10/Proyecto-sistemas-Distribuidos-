@@ -198,8 +198,11 @@ def main():
     print("[GestorAlmacenamiento] Escuchando en 5570 (REP) - Postgres enabled")  
 
     # Conexión y esquema
-    conn = connect_db()            
-    ensure_schema(conn)           
+    conn = connect_db()
+    print("[GestorAlmacenamiento] Conectado a PostgreSQL")
+    ensure_schema(conn)
+    print("[GestorAlmacenamiento] Esquema de base de datos verificado")
+    print("[GestorAlmacenamiento] Listo para recibir peticiones...")
 
     while True:
         try:
