@@ -1,19 +1,87 @@
 import zmq
 import json
+import os
 from common.actors.base import Actor
 
 
 class ActorPrestamo(Actor):
     topic = "prestamo"
 
+    def __init__(self):
+        super().__init__()
+        # Conectar al gestor de almacenamiento
+        self.context_almacenamiento = zmq.Context()
+        self.socket_almacenamiento = self.context_almacenamiento.socket(zmq.REQ)
+        
+        # Permitir múltiples hosts para failover
+        gestor_almacenamiento_hosts = os.getenv(
+            "GESTOR_ALMACENAMIENTO", 
+            "gestor_almacenamiento:5570"
+        ).split(",")
+        
+        for host in gestor_almacenamiento_hosts:
+            addr = f"tcp://{host.strip()}"
+            print(f"[ActorPrestamo] Conectando a almacenamiento: {addr}")
+            self.socket_almacenamiento.connect(addr)
+        
+        self.socket_almacenamiento.setsockopt(zmq.RCVTIMEO, 5000)
+        self.socket_almacenamiento.setsockopt(zmq.SNDTIMEO, 5000)
+
     def handle(self, msg: dict) -> dict:
+        """Procesa un préstamo de libro"""
         print(f"[ActorPrestamo] Procesando: {msg}")
-        # Simulación: siempre aprueba si el payload tiene isbn
-        data = msg.get("payload") if isinstance(msg, dict) else msg
-        if isinstance(data, dict):
-            if data.get("data") and (data.get("data").get("isbn") or data.get("data").get("titulo") or data.get("isbn")):
-                return {"ok": True, "accion": "registrar_prestamo"}
-        return {"ok": False, "accion": "datos_invalidos"}
+        
+        try:
+            # Extraer datos del mensaje
+            isbn = msg.get("isbn")
+            usuario = msg.get("usuario")
+            
+            if not isbn or not usuario:
+                print(f"[ActorPrestamo] Datos incompletos: isbn={isbn}, usuario={usuario}")
+                return {"ok": False, "error": "Datos incompletos"}
+            
+            # Solicitar procesamiento al gestor de almacenamiento
+            peticion = {
+                "accion": "procesar_prestamo",
+                "isbn": isbn,
+                "usuario": usuario
+            }
+            
+            print(f"[ActorPrestamo] Enviando petición al almacenamiento: {peticion}")
+            self.socket_almacenamiento.send_json(peticion)
+            
+            # Esperar respuesta
+            respuesta = self.socket_almacenamiento.recv_json()
+            print(f"[ActorPrestamo] Respuesta del almacenamiento: {respuesta}")
+            
+            # Procesar respuesta
+            if respuesta.get("status") == "ok":
+                return {
+                    "ok": True,
+                    "accion": "prestamo_registrado",
+                    "datos": respuesta.get("datos", {})
+                }
+            else:
+                return {
+                    "ok": False,
+                    "error": respuesta.get("error", "Error desconocido"),
+                    "detalle": respuesta.get("detalle", "")
+                }
+                
+        except zmq.error.Again:
+            print("[ActorPrestamo] Timeout al comunicarse con almacenamiento")
+            return {"ok": False, "error": "Timeout al comunicarse con almacenamiento"}
+        except Exception as e:
+            print(f"[ActorPrestamo] Error al procesar préstamo: {e}")
+            return {"ok": False, "error": str(e)}
+    
+    def __del__(self):
+        """Limpieza de recursos"""
+        try:
+            self.socket_almacenamiento.close()
+            self.context_almacenamiento.term()
+        except Exception:
+            pass
 
 
 def main():

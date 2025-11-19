@@ -76,62 +76,66 @@ class GestorCarga:
             # construir la respuesta inmediata con nueva fecha = ahora + 7 días
             nueva_fecha = (datetime.now() + timedelta(days=7)).isoformat()
             # Crear una Respuesta usando el constructor dataclass
-            resp = Respuesta(topico="renovacion", contenido="respuesta", exito=True,
-                             mensaje="ACEPTADO", fechaOperacion=datetime.now().isoformat(),
-                             datos={"nueva_fecha": nueva_fecha})
+            resp = Respuesta(
+                topico="renovacion", 
+                contenido="respuesta", 
+                exito=True,
+                mensaje="ACEPTADO", 
+                fechaOperacion=datetime.now().isoformat(),
+                datos={"nueva_fecha": nueva_fecha}
+            )
             return resp
         if operacion == "devolucion":
             # vía pub/sub
             self.publicar_evento(operacion, peticion.raw if hasattr(peticion, 'raw') else {"payload": peticion.payload})
-            return Respuesta(correlacion_id=peticion.id,
-                            payload={"ok": True, "detalle": f"Enviado a actor {operacion}"})
+            return Respuesta(
+                topico="devolucion",
+                contenido="respuesta",
+                exito=True, 
+                mensaje="Devolución enviada a procesamiento", 
+                datos={}
+            )
 
         if operacion == "consulta":
             # simplificado: responder directamente
-            return Respuesta(correlacion_id=peticion.id,
-                            payload={"ok": True, "detalle": f"Consulta recibida {peticion.payload}"})
+            return Respuesta(
+                topico="consulta",
+                contenido="respuesta",
+                exito=True, 
+                mensaje="Consulta recibida", 
+                datos=peticion.payload
+            )
 
         if operacion == "prestamo":
-            # antes de enrutar, comprobar el estado del circuito
-            if CircuitBreaker.is_open():
-                # rechazar rápido: libro no disponible
-                return Respuesta(correlacion_id=peticion.id,
-                                payload={"ok": False, "detalle": "Libro no disponible (circuit open)"})
+            # Enviar préstamo por PUB/SUB (como devolución)
+            print("[Gestor] Procesando préstamo...")
+            mensaje = peticion.raw if hasattr(peticion, 'raw') else {"payload": peticion.payload}
+            print(f"[Gestor] Publicando evento 'prestamo': {mensaje}")
+            self.publicar_evento(operacion, mensaje)
+            print("[Gestor] Evento publicado, creando respuesta...")
+            respuesta = Respuesta(
+                topico="prestamo",
+                contenido="respuesta",
+                exito=True, 
+                mensaje="Préstamo enviado a procesamiento", 
+                datos={}
+            )
+            print(f"[Gestor] Respuesta creada: {respuesta}")
+            return respuesta
 
-            # intentar un REQ directo al actor de préstamo
-            req = self.context.socket(zmq.REQ)
-            req.RCVTIMEO = 3000  # ms
-            req.SNDTIMEO = 3000
-            try:
-                req.connect("tcp://actor_prestamo:5560")
-                # enviar la petición raw al actor
-                to_send = peticion.raw if hasattr(peticion, 'raw') else {"payload": peticion.payload}
-                req.send_json(to_send)
-                reply = req.recv_json()
-                # si actor responde ok True, éxito
-                if isinstance(reply, dict) and reply.get("ok"):
-                    CircuitBreaker.on_success()
-                    return Respuesta(correlacion_id=peticion.id,
-                                    payload={"ok": True, "detalle": "Préstamo procesado por actor"})
-                else:
-                    CircuitBreaker.on_failure()
-                    return Respuesta(correlacion_id=peticion.id,
-                                    payload={"ok": False, "detalle": "Libro no disponible"})
-            except Exception:
-                CircuitBreaker.on_failure()
-                return Respuesta(correlacion_id=peticion.id,
-                                payload={"ok": False, "detalle": "Error comunicando con actor_prestamo"})
-            finally:
-                try:
-                    req.close()
-                except Exception:
-                    pass
-
-        return Respuesta(correlacion_id=peticion.id,
-                        payload={"ok": False, "detalle": f"Operación no soportada: {operacion}"})
+        return Respuesta(
+            topico="error",
+            contenido="respuesta",
+            exito=False, 
+            mensaje=f"Operación no soportada: {operacion}", 
+            datos={}
+        )
 
     def responder_cliente(self, respuesta: Respuesta) -> None:
-        self.replier.reply(respuesta.to_dict() if hasattr(respuesta, 'to_dict') else respuesta.__dict__)
+        respuesta_dict = respuesta.to_dict() if hasattr(respuesta, 'to_dict') else respuesta.__dict__
+        print(f"[Gestor] Enviando respuesta: {respuesta_dict}")
+        self.replier.reply(respuesta_dict)
+        print("[Gestor] Respuesta enviada")
 
 
 def main():
@@ -146,7 +150,9 @@ def main():
             print(f"[Gestor] Recibida petición: {peticion.payload}")
 
             # enrutar según tipo
+            print(f"[Gestor] Enrutando operación: {peticion.payload.get('operacion')}")
             respuesta = gestor.enrutar_prestamo(peticion)
+            print(f"[Gestor] Respuesta generada: exito={respuesta.exito}, mensaje={respuesta.mensaje}")
 
             # responder al cliente
             gestor.responder_cliente(respuesta)
