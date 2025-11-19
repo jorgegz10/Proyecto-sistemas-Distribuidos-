@@ -16,5 +16,5 @@ COPY ./gestor_almacenamiento/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Arranque
-CMD ["python", "gestor_ga.py"]
+CMD ["python", "gestor_a.py"]
 
