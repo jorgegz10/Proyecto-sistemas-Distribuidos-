@@ -7,13 +7,14 @@ from datetime import datetime, timedelta
 # === Config DB desde variables de entorno ===
 DB_HOST = os.getenv("DB_HOST", "postgres_primary")     
 DB_PORT = int(os.getenv("DB_PORT", "5432"))    
-DB_STANDBY_HOST = os.getenv("DB_STANDBY_HOST", "postgres_standby")
+DB_STANDBY_HOST = os.getenv("DB_STANDBY_HOST", "postgres_replica")  # Cambiado a postgres_replica
 DB_NAME = os.getenv("DB_NAME", "library")      
 DB_USER = os.getenv("DB_USER", "app")          
 DB_PASS = os.getenv("DB_PASS", "app")
 
 # Estado de conexión global
 current_db_host = DB_HOST
+current_db_port = DB_PORT
 last_failover_time = None
 
 
@@ -34,6 +35,7 @@ def connect_db_with_failover(preferred_host=None):
     """
     Conecta a PostgreSQL con soporte para failover automático.
     Intenta conectar al host preferido, si falla intenta el alternativo.
+    También prueba diferentes puertos (5432 y 5433).
     Verifica que la conexión sea de escritura (no read-only).
     
     Args:
@@ -42,30 +44,41 @@ def connect_db_with_failover(preferred_host=None):
     Returns:
         Tupla (conexión, host_usado)
     """
-    global current_db_host, last_failover_time
+    global current_db_host, current_db_port, last_failover_time
     
+    # Lista de (host, puerto) para probar
     hosts_to_try = []
-    if preferred_host:
-        hosts_to_try = [preferred_host]
-    else:
-        # Intentar primero el host actual, luego el alternativo
-        hosts_to_try = [current_db_host]
-        alternate = DB_STANDBY_HOST if current_db_host == DB_HOST else DB_HOST
-        hosts_to_try.append(alternate)
     
-    # Asegurar que probamos ambos hosts
-    if DB_HOST not in hosts_to_try:
-        hosts_to_try.append(DB_HOST)
-    if DB_STANDBY_HOST not in hosts_to_try:
-        hosts_to_try.append(DB_STANDBY_HOST)
+    if preferred_host:
+        # Si se especifica un host preferido, probar ese primero con ambos puertos
+        hosts_to_try.append((preferred_host, DB_PORT))
+        hosts_to_try.append((preferred_host, 5433))
+    else:
+        # Intentar primero el host y puerto actuales
+        hosts_to_try.append((current_db_host, current_db_port))
+        
+        # Luego intentar el host actual con el puerto alternativo
+        alt_port = 5433 if current_db_port == 5432 else 5432
+        hosts_to_try.append((current_db_host, alt_port))
+        
+        # Luego intentar el host alternativo con ambos puertos
+        alternate_host = DB_STANDBY_HOST if current_db_host == DB_HOST else DB_HOST
+        hosts_to_try.append((alternate_host, 5432))
+        hosts_to_try.append((alternate_host, 5433))
+    
+    # Asegurar que probamos todas las combinaciones principales
+    for host in [DB_HOST, DB_STANDBY_HOST]:
+        for port in [5432, 5433]:
+            if (host, port) not in hosts_to_try:
+                hosts_to_try.append((host, port))
     
     last_error = None
-    for host in hosts_to_try:
+    for host, port in hosts_to_try:
         try:
-            print(f"[DB] Intentando conectar a {host}:{DB_PORT}...")
+            print(f"[DB] Intentando conectar a {host}:{port}...")
             conn = psycopg2.connect(
                 host=host,
-                port=DB_PORT,
+                port=port,
                 dbname=DB_NAME,
                 user=DB_USER,
                 password=DB_PASS,
@@ -75,27 +88,30 @@ def connect_db_with_failover(preferred_host=None):
             
             # Verificar que no sea read-only
             if is_connection_read_only(conn):
-                print(f"[DB] ⚠️  {host} está en modo read-only (standby), intentando otro host...")
+                print(f"[DB] ⚠️  {host}:{port} está en modo read-only (standby), intentando otro...")
                 conn.close()
                 continue
             
             # Conexión exitosa y de escritura
-            if host != current_db_host:
-                print(f"[DB] ✅ FAILOVER: Cambiando de {current_db_host} a {host}")
+            if host != current_db_host or port != current_db_port:
+                print(f"[DB] ✅ FAILOVER: Cambiando de {current_db_host}:{current_db_port} a {host}:{port}")
                 current_db_host = host
+                current_db_port = port
                 last_failover_time = datetime.now()
             else:
-                print(f"[DB] ✅ Conectado a {host}")
+                print(f"[DB] ✅ Conectado a {host}:{port}")
             
             return conn, host
             
         except Exception as e:
             last_error = e
-            print(f"[DB] ❌ Error conectando a {host}: {e}")
+            print(f"[DB] ❌ Error conectando a {host}:{port}: {e}")
             continue
     
     # Si llegamos aquí, no pudimos conectar a ningún host
     raise Exception(f"No se pudo conectar a ningún host de PostgreSQL. Último error: {last_error}")
+
+
 
 
 def connect_db():

@@ -19,7 +19,7 @@ services:
     networks:
       - backend
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U app -d library"]
+      test: [ "CMD-SHELL", "pg_isready -U app -d library" ]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -36,7 +36,7 @@ services:
     volumes:
       - postgres_replica_data:/var/lib/postgresql/data
       - ./postgres-replication/entrypoint-replica.sh:/usr/local/bin/entrypoint-replica.sh:ro
-    entrypoint: ["entrypoint-replica.sh"]
+    entrypoint: [ "entrypoint-replica.sh" ]
     depends_on:
       postgres_primary:
         condition: service_healthy
@@ -50,8 +50,8 @@ services:
       dockerfile: ./gestor_carga/Dockerfile
     container_name: gestor_carga
     ports:
-      - "5555:5555"  # REQ/REP ZMQ
-      - "5556:5556"  # PUB/SUB ZMQ
+      - "5555:5555" # REQ/REP ZMQ
+      - "5556:5556" # PUB/SUB ZMQ
     networks:
       - backend
 
@@ -63,6 +63,7 @@ services:
     container_name: gestor_almacenamiento
     environment:
       DB_HOST: postgres_primary
+      DB_STANDBY_HOST: postgres_replica # Para failover automático al puerto 5433
       DB_PORT: 5432
       DB_NAME: library
       DB_USER: app
@@ -94,7 +95,7 @@ services:
     container_name: run_renovaciones
     depends_on:
       - gestor_carga
-    command: ["python", "run_renovaciones.py"]
+    command: [ "python", "run_renovaciones.py" ]
     networks:
       - backend
 
@@ -136,13 +137,13 @@ services:
   locust_tests:
     build:
       context: .
-      dockerfile: ./proceso_solicitante/Dockerfile 
+      dockerfile: ./proceso_solicitante/Dockerfile
     container_name: locust_tests
     working_dir: /app
     command: python run_pruebas_locust.py
     volumes:
-      - ./proceso_solicitante:/app  # Monta código fuente
-      - ./test_results:/test_results  # Carpeta donde se guardan CSV
+      - ./proceso_solicitante:/app # Monta código fuente
+      - ./test_results:/test_results # Carpeta donde se guardan CSV
     depends_on:
       - gestor_carga
       - actor_prestamo
@@ -154,15 +155,15 @@ services:
   # Interfaz web de Locust para pruebas manuales (opcional)
   locust_web:
     build:
-      context: .  
-      dockerfile: ./proceso_solicitante/Dockerfile 
+      context: .
+      dockerfile: ./proceso_solicitante/Dockerfile
     container_name: locust_web
     working_dir: /app
     command: locust -f locustfile.py --web-host 0.0.0.0
     volumes:
       - ./proceso_solicitante:/app
     ports:
-      - "8089:8089"  # Interfaz Web
+      - "8089:8089" # Interfaz Web
     depends_on:
       - gestor_carga
     networks:
@@ -172,7 +173,7 @@ services:
   analyzer:
     build:
       context: .
-      dockerfile: ./proceso_solicitante/Dockerfile  
+      dockerfile: ./proceso_solicitante/Dockerfile
     container_name: analyzer
     working_dir: /app
     command: python analizar_resultados.py
