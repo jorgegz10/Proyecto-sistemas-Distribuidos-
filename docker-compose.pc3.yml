@@ -1,0 +1,31 @@
+# docker-compose.pc3.yml
+# PC3 - ACTOR DE RENOVACIÓN (Virtual 2)
+#
+# ANTES DE EJECUTAR:
+# 1. Reemplaza <IP_PC1> con la IP real del PC1 (Local)
+# 2. Ejemplo: Si PC1 tiene IP 192.168.1.100, reemplaza todas las <IP_PC1> por 192.168.1.100
+#
+# Este PC ejecuta:
+# - Actor Renovación
+
+services:
+  # Actor de Renovación
+  actor_renovacion:
+    build:
+      context: .
+      dockerfile: ./actor_renovacion/Dockerfile
+    container_name: actor_renovacion_pc3
+    environment:
+      - GESTOR_CARGA_PUB_ADDR=tcp://<IP_PC1>:5556
+      - GESTOR_ALMACENAMIENTO_HOST=<IP_PC1>
+      - GESTOR_ALMACENAMIENTO_PORT=5570
+    extra_hosts:
+      - "gestor_carga:<IP_PC1>"
+      - "gestor_almacenamiento:<IP_PC1>"
+    networks:
+      - backend
+    restart: unless-stopped
+
+networks:
+  backend:
+    driver: bridge
