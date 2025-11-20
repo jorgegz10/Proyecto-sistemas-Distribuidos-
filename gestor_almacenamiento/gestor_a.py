@@ -5,21 +5,127 @@ from psycopg2.extras import RealDictCursor
 from datetime import datetime, timedelta
 
 # === Config DB desde variables de entorno ===
-DB_HOST = os.getenv("DB_HOST", "postgres")     
+DB_HOST = os.getenv("DB_HOST", "postgres_primary")     
 DB_PORT = int(os.getenv("DB_PORT", "5432"))    
+DB_STANDBY_HOST = os.getenv("DB_STANDBY_HOST", "postgres_standby")
 DB_NAME = os.getenv("DB_NAME", "library")      
 DB_USER = os.getenv("DB_USER", "app")          
-DB_PASS = os.getenv("DB_PASS", "app")         
+DB_PASS = os.getenv("DB_PASS", "app")
+
+# Estado de conexión global
+current_db_host = DB_HOST
+last_failover_time = None
 
 
 # ===== Helpers de base de datos =====
-def connect_db():                               
-    conn = psycopg2.connect(
-        host=DB_HOST, port=DB_PORT,
-        dbname=DB_NAME, user=DB_USER, password=DB_PASS
-    )
-    conn.autocommit = False
+def is_connection_read_only(conn):
+    """Verifica si la conexión actual es de solo lectura (standby)."""
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SHOW transaction_read_only;")
+            result = cur.fetchone()
+            return result[0] == 'on' if result else False
+    except Exception as e:
+        print(f"[DB] Error verificando read-only status: {e}")
+        return True  # Asumir read-only si hay error
+
+
+def connect_db_with_failover(preferred_host=None):
+    """
+    Conecta a PostgreSQL con soporte para failover automático.
+    Intenta conectar al host preferido, si falla intenta el alternativo.
+    Verifica que la conexión sea de escritura (no read-only).
+    
+    Args:
+        preferred_host: Host preferido para conectar (None = usar el actual)
+    
+    Returns:
+        Tupla (conexión, host_usado)
+    """
+    global current_db_host, last_failover_time
+    
+    hosts_to_try = []
+    if preferred_host:
+        hosts_to_try = [preferred_host]
+    else:
+        # Intentar primero el host actual, luego el alternativo
+        hosts_to_try = [current_db_host]
+        alternate = DB_STANDBY_HOST if current_db_host == DB_HOST else DB_HOST
+        hosts_to_try.append(alternate)
+    
+    # Asegurar que probamos ambos hosts
+    if DB_HOST not in hosts_to_try:
+        hosts_to_try.append(DB_HOST)
+    if DB_STANDBY_HOST not in hosts_to_try:
+        hosts_to_try.append(DB_STANDBY_HOST)
+    
+    last_error = None
+    for host in hosts_to_try:
+        try:
+            print(f"[DB] Intentando conectar a {host}:{DB_PORT}...")
+            conn = psycopg2.connect(
+                host=host,
+                port=DB_PORT,
+                dbname=DB_NAME,
+                user=DB_USER,
+                password=DB_PASS,
+                connect_timeout=5
+            )
+            conn.autocommit = False
+            
+            # Verificar que no sea read-only
+            if is_connection_read_only(conn):
+                print(f"[DB] ⚠️  {host} está en modo read-only (standby), intentando otro host...")
+                conn.close()
+                continue
+            
+            # Conexión exitosa y de escritura
+            if host != current_db_host:
+                print(f"[DB] ✅ FAILOVER: Cambiando de {current_db_host} a {host}")
+                current_db_host = host
+                last_failover_time = datetime.now()
+            else:
+                print(f"[DB] ✅ Conectado a {host}")
+            
+            return conn, host
+            
+        except Exception as e:
+            last_error = e
+            print(f"[DB] ❌ Error conectando a {host}: {e}")
+            continue
+    
+    # Si llegamos aquí, no pudimos conectar a ningún host
+    raise Exception(f"No se pudo conectar a ningún host de PostgreSQL. Último error: {last_error}")
+
+
+def connect_db():
+    """Conecta a la base de datos con soporte de failover."""
+    conn, _ = connect_db_with_failover()
     return conn
+
+
+def reconnect_db_if_needed(conn):
+    """
+    Verifica si la conexión está activa, si no, intenta reconectar.
+    
+    Returns:
+        Nueva conexión si fue necesario reconectar, o la misma si está ok.
+    """
+    try:
+        # Test rápido de la conexión
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1;")
+        return conn
+    except Exception as e:
+        print(f"[DB] ⚠️  Conexión perdida: {e}. Intentando reconectar...")
+        try:
+            conn.close()
+        except Exception:
+            pass
+        
+        # Intentar reconectar con failover
+        new_conn, _ = connect_db_with_failover()
+        return new_conn
 
 
 def ensure_schema(conn):                        
@@ -271,17 +377,23 @@ def main():
     socket_rep = context.socket(zmq.REP)
     socket_rep.bind("tcp://*:5570")
 
-    print("[GestorAlmacenamiento] Escuchando en 5570 (REP) - Postgres enabled")  
+    print("[GestorAlmacenamiento] Escuchando en 5570 (REP) - Postgres con failover automático")  
 
     # Conexión y esquema
     conn = connect_db()
-    print("[GestorAlmacenamiento] Conectado a PostgreSQL")
+    print(f"[GestorAlmacenamiento] Conectado a PostgreSQL ({current_db_host})")
     ensure_schema(conn)
     print("[GestorAlmacenamiento] Esquema de base de datos verificado")
     print("[GestorAlmacenamiento] Listo para recibir peticiones...")
 
+    request_count = 0
     while True:
         try:
+            # Verificar conexión cada 10 requests
+            request_count += 1
+            if request_count % 10 == 0:
+                conn = reconnect_db_if_needed(conn)
+            
             req = socket_rep.recv_json()
 
             # Acepta "action" o "accion"
@@ -322,9 +434,26 @@ def main():
 
             socket_rep.send_json(resp)
 
+        except psycopg2.OperationalError as e:
+            # Error de conexión - intentar reconectar
+            print(f"[DB] ❌ Error de conexión a la base de datos: {e}")
+            try:
+                conn = connect_db()
+                print(f"[DB] ✅ Reconexión exitosa a {current_db_host}")
+                socket_rep.send_json({
+                    "error": "ErrorConexionDB",
+                    "detalle": "Se perdió la conexión a la base de datos, reintente la operación"
+                })
+            except Exception as reconnect_error:
+                print(f"[DB] ❌ Fallo la reconexión: {reconnect_error}")
+                socket_rep.send_json({
+                    "error": "ErrorConexionDB",
+                    "detalle": f"No se pudo reconectar a la base de datos: {str(reconnect_error)}"
+                })
         except KeyboardInterrupt:
             break
         except Exception as e:
+            print(f"[ERROR] Excepción no manejada: {e}")
             try:
                 socket_rep.send_json({"error": str(e)})
             except Exception:

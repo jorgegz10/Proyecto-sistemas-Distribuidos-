@@ -1,5 +1,4 @@
-# Simplified docker-compose.yml - PostgreSQL containers only
-# This version contains only the PostgreSQL primary and replica for failover strategy testing
+# Simplified docker-compose.yml - PostgreSQL con replicación streaming básica
 
 services:
   # Base de datos PostgreSQL PRIMARIA
