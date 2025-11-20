@@ -70,6 +70,21 @@ class GestorCarga:
     def publicar_evento(self, topic: str, mensaje: Dict[str, Any]) -> None:
         self.publisher.publish(topic, json.dumps(mensaje))
 
+    def _consultar_almacenamiento(self, peticion: dict) -> dict:
+        """Realiza una petición síncrona al gestor de almacenamiento"""
+        try:
+            req = self.context.socket(zmq.REQ)
+            req.RCVTIMEO = 5000
+            req.SNDTIMEO = 5000
+            req.connect("tcp://gestor_almacenamiento:5570")
+            req.send_json(peticion)
+            response = req.recv_json()
+            req.close()
+            return response
+        except Exception as e:
+            print(f"[Gestor] Error al consultar almacenamiento: {e}")
+            return {"error": "ErrorComunicacion", "detalle": str(e)}
+
     def enrutar_prestamo(self, peticion: SimpleNamespace) -> Respuesta:
         operacion = peticion.payload.get("operacion", "desconocida")
         if operacion == "renovacion":
@@ -139,8 +154,23 @@ class GestorCarga:
             )
 
         if operacion == "prestamo":
-            # Enviar préstamo por PUB/SUB (como devolución)
-            print("[Gestor] Procesando préstamo...")
+            # 1. Validar existencia del libro síncronamente
+            print("[Gestor] Validando existencia del libro...")
+            isbn = peticion.payload.get("isbn")
+            validacion = self._consultar_almacenamiento({"action": "consultar_libro", "isbn": isbn})
+            
+            if validacion.get("status") != "ok":
+                print(f"[Gestor] Validación fallida: {validacion}")
+                return Respuesta(
+                    topico="prestamo",
+                    contenido="respuesta",
+                    exito=False,
+                    mensaje=validacion.get("detalle", "El libro no existe"),
+                    datos={"error": validacion.get("error")}
+                )
+
+            # 2. Si existe, enviar préstamo por PUB/SUB
+            print("[Gestor] Libro validado, procesando préstamo...")
             mensaje = peticion.raw if hasattr(peticion, 'raw') else {"payload": peticion.payload}
             print(f"[Gestor] Publicando evento 'prestamo': {mensaje}")
             self.publicar_evento(operacion, mensaje)

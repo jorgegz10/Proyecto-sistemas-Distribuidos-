@@ -1,10 +1,10 @@
 # docker-compose.yml documentado
 
 services:
-  # Base de datos PostgreSQL para el gestor de almacenamiento
-  postgres:
+  # Base de datos PostgreSQL PRIMARIA
+  postgres_primary:
     image: postgres:16
-    container_name: postgres_library
+    container_name: postgres_primary
     environment:
       POSTGRES_DB: library
       POSTGRES_USER: app
@@ -12,8 +12,10 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql
-      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - postgres_primary_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+      - ./postgres-replication/init-primary.sh:/docker-entrypoint-initdb.d/02-init-primary.sh:ro
+    command: postgres -c wal_level=replica -c hot_standby=on -c max_wal_senders=10 -c max_replication_slots=10 -c hot_standby_feedback=on
     networks:
       - backend
     healthcheck:
@@ -21,6 +23,25 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+
+  # Base de datos PostgreSQL RÉPLICA
+  postgres_replica:
+    image: postgres:16
+    container_name: postgres_replica
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_replica_data:/var/lib/postgresql/data
+      - ./postgres-replication/entrypoint-replica.sh:/usr/local/bin/entrypoint-replica.sh:ro
+    entrypoint: ["entrypoint-replica.sh"]
+    depends_on:
+      postgres_primary:
+        condition: service_healthy
+    networks:
+      - backend
 
   # Servicio principal que gestiona las comunicaciones ZMQ y balancea carga
   gestor_carga:
@@ -41,7 +62,7 @@ services:
       dockerfile: ./gestor_almacenamiento/Dockerfile
     container_name: gestor_almacenamiento
     environment:
-      DB_HOST: postgres
+      DB_HOST: postgres_primary
       DB_PORT: 5432
       DB_NAME: library
       DB_USER: app
@@ -49,7 +70,7 @@ services:
     ports:
       - "5570:5570"
     depends_on:
-      postgres:
+      postgres_primary:
         condition: service_healthy
     networks:
       - backend
@@ -170,4 +191,5 @@ networks:
 
 # Volúmenes persistentes
 volumes:
-  postgres_data:
+  postgres_primary_data:
+  postgres_replica_data:

@@ -1,6 +1,6 @@
 import os
 import zmq
-from common.messaging.peticion import Peticion
+# from common.messaging.peticion import Peticion
 
 def mostrar_menu() -> None:
     print("  --- Menú ---")
@@ -11,8 +11,13 @@ def mostrar_menu() -> None:
     print("  0) Salir")
 
 def enviarPeticion(socket_req, operacion, data):
-    peticion = Peticion(payload={"operacion": operacion, "data": data})
-    socket_req.send_json(peticion.__dict__)
+    mensaje = {
+        "operacion": operacion,
+        "isbn": data.get("isbn"),
+        "usuario": data.get("usuario", "usuario_demo"),
+        "titulo": data.get("titulo")
+    }
+    socket_req.send_json(mensaje)
     respuesta = socket_req.recv_json()
     print(f"[Solicitante] Respuesta recibida: {respuesta}\n")
 
@@ -20,9 +25,6 @@ def main():
     context = zmq.Context()
     socket_req = context.socket(zmq.REQ)
 
-    # Allow running proceso_solicitante on a different machine by configuring
-    # the gestor_carga endpoint through environment variables.
-    # Priority: GESTOR_CARGA_ADDR > (GESTOR_CARGA_HOST + GESTOR_CARGA_PORT) > default
     addr = os.getenv("GESTOR_CARGA_ADDR")
     host = os.getenv("GESTOR_CARGA_HOST")
     port = os.getenv("GESTOR_CARGA_PORT")

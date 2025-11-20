@@ -125,6 +125,24 @@ def actualizar_renovacion(conn, isbn, usuario, nueva_fecha=None):
         }
 
 
+
+def consultar_libro(conn, isbn):
+    """
+    Consulta si un libro existe y retorna sus datos.
+    """
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT * FROM libros WHERE isbn=%s;", (isbn,))
+            libro = cur.fetchone()
+            
+            if libro:
+                return {"status": "ok", "datos": libro}
+            else:
+                return {"error": "LibroNoEncontrado", "detalle": f"El libro {isbn} no existe"}
+    except Exception as e:
+        return {"error": "ErrorConsulta", "detalle": str(e)}
+
+
 def aplicar_devolucion(conn, isbn, usuario):    
     try:
         with conn.cursor() as cur:
@@ -291,6 +309,13 @@ def main():
                     resp = {"error": "ParametrosInvalidos", "detalle": "ISBN y usuario son requeridos"}
                 else:
                     resp = procesar_prestamo(conn, isbn, usuario)
+
+            elif action == "consultar_libro":
+                isbn = req.get("isbn")
+                if not isbn:
+                    resp = {"error": "ParametrosInvalidos"}
+                else:
+                    resp = consultar_libro(conn, isbn)
 
             else:
                 resp = {"error": "accion_desconocida"}
