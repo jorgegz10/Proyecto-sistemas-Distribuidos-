@@ -53,18 +53,76 @@ def validar_renovacion(conn, isbn, usuario):
         return {"renovaciones": (row["renovaciones"] if row else 0)}
 
 
-def actualizar_renovacion(conn, isbn, usuario, nueva_fecha):  
-    with conn.cursor() as cur:
-        # UPSERT y cap a 2 renovaciones
-        cur.execute("""
-            INSERT INTO prestamos (isbn, usuario, estado, fecha_devolucion, renovaciones)
-            VALUES (%s, %s, 'ACTIVO', %s, 1)
-            ON CONFLICT (isbn, usuario)
-            DO UPDATE SET fecha_devolucion = EXCLUDED.fecha_devolucion,
-                          renovaciones = LEAST(prestamos.renovaciones + 1, 2);
-        """, (isbn, usuario, nueva_fecha))
-    conn.commit()
-    return {"status": "ok", "detalle": "renovacion completada"}
+def actualizar_renovacion(conn, isbn, usuario, nueva_fecha=None):
+    """
+    Actualiza una renovación de préstamo.
+    Valida que no se exceda el límite de 2 renovaciones.
+    
+    Returns:
+        Dict con status/error
+    """
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # 1) Verificar préstamo existente
+            cur.execute(
+                "SELECT renovaciones, estado, fecha_devolucion FROM prestamos WHERE isbn=%s AND usuario=%s;",
+                (isbn, usuario)
+            )
+            prestamo = cur.fetchone()
+            
+            if not prestamo:
+                return {
+                    "error": "PrestamoNoEncontrado",
+                    "detalle": f"No existe un préstamo para el usuario {usuario} del libro {isbn}"
+                }
+            
+            if prestamo["estado"] != "ACTIVO":
+                return {
+                    "error": "PrestamoNoActivo",
+                    "detalle": f"El préstamo no está activo (estado: {prestamo['estado']})"
+                }
+            
+            # 2) Validar límite de renovaciones
+            if prestamo["renovaciones"] >= 2:
+                return {
+                    "error": "LimiteRenovaciones",
+                    "detalle": f"Se alcanzó el límite de 2 renovaciones (actual: {prestamo['renovaciones']})"
+                }
+            
+            # 3) Calcular nueva fecha de devolución (+7 días desde la actual)
+            if nueva_fecha is None:
+                fecha_actual = prestamo["fecha_devolucion"]
+                nueva_fecha_calculada = fecha_actual + timedelta(days=7)
+            else:
+                nueva_fecha_calculada = nueva_fecha
+            
+            # 4) Actualizar préstamo
+            cur.execute("""
+                UPDATE prestamos
+                SET fecha_devolucion = %s,
+                    renovaciones = renovaciones + 1
+                WHERE isbn=%s AND usuario=%s;
+            """, (nueva_fecha_calculada, isbn, usuario))
+        
+        conn.commit()
+        
+        return {
+            "status": "ok",
+            "detalle": "Renovación completada exitosamente",
+            "datos": {
+                "isbn": isbn,
+                "usuario": usuario,
+                "nueva_fecha_devolucion": nueva_fecha_calculada.isoformat() if hasattr(nueva_fecha_calculada, 'isoformat') else str(nueva_fecha_calculada),
+                "renovaciones": prestamo["renovaciones"] + 1
+            }
+        }
+        
+    except Exception as e:
+        conn.rollback()
+        return {
+            "error": "ErrorProcesamiento",
+            "detalle": f"Error al procesar renovación: {str(e)}"
+        }
 
 
 def aplicar_devolucion(conn, isbn, usuario):    

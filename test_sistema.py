@@ -102,7 +102,7 @@ def main():
     print("\n" + "="*70)
     print("✅ PRUEBAS COMPLETADAS")
     print("="*70)
-    print("\n💡 Ahora puedes verificar la base de datos con:")
+    print("\n Verificar la base de datos con:")
     print("   docker exec -it postgres_library psql -U app -d library -c \"SELECT * FROM libros;\"")
     print("   docker exec -it postgres_library psql -U app -d library -c \"SELECT * FROM prestamos;\"")
 

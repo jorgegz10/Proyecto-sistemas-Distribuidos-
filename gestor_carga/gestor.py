@@ -73,18 +73,50 @@ class GestorCarga:
     def enrutar_prestamo(self, peticion: SimpleNamespace) -> Respuesta:
         operacion = peticion.payload.get("operacion", "desconocida")
         if operacion == "renovacion":
-            # construir la respuesta inmediata con nueva fecha = ahora + 7 días
-            nueva_fecha = (datetime.now() + timedelta(days=7)).isoformat()
-            # Crear una Respuesta usando el constructor dataclass
-            resp = Respuesta(
-                topico="renovacion", 
-                contenido="respuesta", 
-                exito=True,
-                mensaje="ACEPTADO", 
-                fechaOperacion=datetime.now().isoformat(),
-                datos={"nueva_fecha": nueva_fecha}
-            )
-            return resp
+            # Comunicación SÍNCRONA con gestor de almacenamiento para obtener resultado real
+            print("[Gestor] Procesando renovación síncrona...")
+            isbn = peticion.payload.get("isbn")
+            usuario = peticion.payload.get("usuario")
+            
+            try:
+                # Conectar directamente al gestor de almacenamiento
+                req = self.context.socket(zmq.REQ)
+                req.RCVTIMEO = 5000
+                req.SNDTIMEO = 5000
+                req.connect("tcp://gestor_almacenamiento:5570")
+                
+                # Solicitar renovación
+                req.send_json({"action": "actualizar_renovacion", "isbn": isbn, "usuario": usuario})
+                response = req.recv_json()
+                req.close()
+                
+                print(f"[Gestor] Respuesta de almacenamiento: {response}")
+                
+                if response.get("status") == "ok":
+                    return Respuesta(
+                        topico="renovacion",
+                        contenido="respuesta",
+                        exito=True,
+                        mensaje="Renovación completada exitosamente",
+                        datos=response.get("datos", {})
+                    )
+                else:
+                    return Respuesta(
+                        topico="renovacion",
+                        contenido="respuesta",
+                        exito=False,
+                        mensaje=response.get("detalle", "Error al renovar"),
+                        datos={"error": response.get("error")}
+                    )
+            except Exception as e:
+                print(f"[Gestor] Error al procesar renovación: {e}")
+                return Respuesta(
+                    topico="renovacion",
+                    contenido="respuesta",
+                    exito=False,
+                    mensaje=f"Error al procesar renovación: {str(e)}",
+                    datos={}
+                )
         if operacion == "devolucion":
             # vía pub/sub
             self.publicar_evento(operacion, peticion.raw if hasattr(peticion, 'raw') else {"payload": peticion.payload})
@@ -156,11 +188,6 @@ def main():
 
             # responder al cliente
             gestor.responder_cliente(respuesta)
-
-            # si fue una renovación, publicar el evento justo después de responder
-            if peticion.payload.get("operacion") == "renovacion":
-                mensaje = peticion.raw if hasattr(peticion, 'raw') else {"payload": peticion.payload}
-                gestor.publicar_evento("renovacion", mensaje)
 
     except KeyboardInterrupt:
         print("Interrumpido")
