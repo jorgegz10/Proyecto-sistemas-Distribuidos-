@@ -1,0 +1,27 @@
+# Archivo de solicitudes de renovación para pruebas de carga
+# Formato: RENO ISBN usuario
+RENO Libro456 usuario1
+RENO Libro789 usuario2
+RENO Libro321 usuario3
+RENO Libro100 usuario4
+RENO Libro222 usuario5
+RENO Libro333 usuario6
+RENO Libro444 usuario7
+RENO Libro555 usuario8
+RENO Libro666 usuario9
+RENO Libro777 usuario10
+RENO Libro888 usuario1
+RENO Libro999 usuario2
+RENO Libro111 usuario3
+RENO Libro123 usuario4
+RENO Libro234 usuario5
+RENO Libro345 usuario6
+RENO Libro567 usuario7
+RENO Libro678 usuario8
+RENO Libro890 usuario9
+RENO Libro901 usuario10
+RENO Libro012 usuario1
+RENO Libro135 usuario2
+RENO Libro246 usuario3
+RENO Libro357 usuario4
+RENO Libro468 usuario5

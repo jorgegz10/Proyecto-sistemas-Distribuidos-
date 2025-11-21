@@ -1,4 +1,5 @@
 locust # Framework de pruebas de carga
+locust-plugins # Plugins de Locust incluyendo Prometheus exporter
 pyzmq # Soporte para ZMQ (mensajería entre servicios)
 pandas # Lectura y manipulación de archivos CSV
 matplotlib # Generación de gráficos

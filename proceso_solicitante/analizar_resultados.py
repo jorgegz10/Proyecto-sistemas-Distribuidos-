@@ -1,32 +1,37 @@
 import pandas as pd
+import matplotlib.pyplot as plt
+from pathlib import Path
 
+# Configuración
+OUT_DIR = Path(".")
+# Buscar archivos de estadísticas en todas las subcarpetas de tests
+archivos = list(Path("tests/GestorCarga").rglob("results_*_stats.csv"))
 
-
-
-
-
+rows = []
 for archivo in archivos:
-    df = pd.read_csv(archivo)
-    # Filtrar fila con métricas agregadas
-    total = df[df["Name"] == "Aggregated"]
-    if total.empty:
-        continue
-    # Extraer número de usuarios desde el nombre del archivo
-    nombre = archivo.stem
     try:
-        usuarios = int(nombre.split("_")[1].replace("users", ""))
-    except Exception:
-        usuarios = None
+        df = pd.read_csv(archivo)
+        # Filtrar fila con métricas agregadas
+        total = df[df["Name"] == "Aggregated"]
+        if total.empty:
+            continue
+        # Extraer número de usuarios desde el nombre del archivo
+        nombre = archivo.stem
+        try:
+            usuarios = int(nombre.split("_")[1].replace("users", ""))
+        except Exception:
+            usuarios = None
 
-
-# Guardar estadísticas relevantes
-rows.append({
-"Usuarios": usuarios,
-"Tiempo promedio (ms)": float(total["Average Response Time"].iloc[0]),
-"Desv. Std (ms)": None, # Esta columna no está presente
-"Solicitudes procesadas": int(total["Request Count"].iloc[0]),
-"Requests/s": float(total["Requests/s"].iloc[0]),
-})
+        # Guardar estadísticas relevantes
+        rows.append({
+            "Usuarios": usuarios,
+            "Tiempo promedio (ms)": float(total["Average Response Time"].iloc[0]),
+            "Desv. Std (ms)": None, # Esta columna no está presente
+            "Solicitudes procesadas": int(total["Request Count"].iloc[0]),
+            "Requests/s": float(total["Requests/s"].iloc[0]),
+        })
+    except Exception as e:
+        print(f"Error procesando {archivo}: {e}")
 
 
 # Validación
