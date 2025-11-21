@@ -87,25 +87,62 @@ class GestorCarga:
 
     def enrutar_prestamo(self, peticion: SimpleNamespace) -> Respuesta:
         operacion = peticion.payload.get("operacion", "desconocida")
-        if operacion == "renovacion":
-            # Comunicación SÍNCRONA con gestor de almacenamiento para obtener resultado real
-            print("[Gestor] Procesando renovación síncrona...")
-            isbn = peticion.payload.get("isbn")
-            usuario = peticion.payload.get("usuario")
-            
+        isbn = peticion.payload.get("isbn")
+        usuario = peticion.payload.get("usuario")
+        
+        if operacion == "prestamo":
+            print("[Gestor] Procesando préstamo...")
             try:
-                # Conectar directamente al gestor de almacenamiento
                 req = self.context.socket(zmq.REQ)
                 req.RCVTIMEO = 5000
                 req.SNDTIMEO = 5000
                 req.connect("tcp://gestor_almacenamiento:5570")
                 
-                # Solicitar renovación
+                req.send_json({"action": "procesar_prestamo", "isbn": isbn, "usuario": usuario})
+                response = req.recv_json()
+                req.close()
+                
+                print(f"[Gestor] Respuesta: {response}")
+                
+                if response.get("status") == "ok":
+                    return Respuesta(
+                        topico="prestamo",
+                        contenido="respuesta",
+                        exito=True,
+                        mensaje=response.get("detalle", "Préstamo registrado exitosamente"),
+                        datos=response.get("datos", {})
+                    )
+                else:
+                    return Respuesta(
+                        topico="prestamo",
+                        contenido="respuesta",
+                        exito=False,
+                        mensaje=response.get("detalle", "Error al procesar préstamo"),
+                        datos={"error": response.get("error")}
+                    )
+            except Exception as e:
+                print(f"[Gestor] Error: {e}")
+                return Respuesta(
+                    topico="prestamo",
+                    contenido="respuesta",
+                    exito=False,
+                    mensaje=f"Error al procesar préstamo: {str(e)}",
+                    datos={}
+                )
+                
+        elif operacion == "renovacion":
+            print("[Gestor] Procesando renovación...")
+            try:
+                req = self.context.socket(zmq.REQ)
+                req.RCVTIMEO = 5000
+                req.SNDTIMEO = 5000
+                req.connect("tcp://gestor_almacenamiento:5570")
+                
                 req.send_json({"action": "actualizar_renovacion", "isbn": isbn, "usuario": usuario})
                 response = req.recv_json()
                 req.close()
                 
-                print(f"[Gestor] Respuesta de almacenamiento: {response}")
+                print(f"[Gestor] Respuesta: {response}")
                 
                 if response.get("status") == "ok":
                     return Respuesta(
@@ -124,7 +161,7 @@ class GestorCarga:
                         datos={"error": response.get("error")}
                     )
             except Exception as e:
-                print(f"[Gestor] Error al procesar renovación: {e}")
+                print(f"[Gestor] Error: {e}")
                 return Respuesta(
                     topico="renovacion",
                     contenido="respuesta",
@@ -132,19 +169,48 @@ class GestorCarga:
                     mensaje=f"Error al procesar renovación: {str(e)}",
                     datos={}
                 )
-        if operacion == "devolucion":
-            # vía pub/sub
-            self.publicar_evento(operacion, peticion.raw if hasattr(peticion, 'raw') else {"payload": peticion.payload})
-            return Respuesta(
-                topico="devolucion",
-                contenido="respuesta",
-                exito=True, 
-                mensaje="Devolución enviada a procesamiento", 
-                datos={}
-            )
+                
+        elif operacion == "devolucion":
+            print("[Gestor] Procesando devolución...")
+            try:
+                req = self.context.socket(zmq.REQ)
+                req.RCVTIMEO = 5000
+                req.SNDTIMEO = 5000
+                req.connect("tcp://gestor_almacenamiento:5570")
+                
+                req.send_json({"action": "aplicar_devolucion", "isbn": isbn, "usuario": usuario})
+                response = req.recv_json()
+                req.close()
+                
+                print(f"[Gestor] Respuesta: {response}")
+                
+                if response.get("status") == "ok":
+                    return Respuesta(
+                        topico="devolucion",
+                        contenido="respuesta",
+                        exito=True,
+                        mensaje=response.get("detalle", "Devolución procesada exitosamente"),
+                        datos=response.get("datos", {})
+                    )
+                else:
+                    return Respuesta(
+                        topico="devolucion",
+                        contenido="respuesta",
+                        exito=False,
+                        mensaje=response.get("detalle", "Error al procesar devolución"),
+                        datos={"error": response.get("error")}
+                    )
+            except Exception as e:
+                print(f"[Gestor] Error: {e}")
+                return Respuesta(
+                    topico="devolucion",
+                    contenido="respuesta",
+                    exito=False,
+                    mensaje=f"Error al procesar devolución: {str(e)}",
+                    datos={}
+                )
 
-        if operacion == "consulta":
-            # simplificado: responder directamente
+        elif operacion == "consulta":
             return Respuesta(
                 topico="consulta",
                 contenido="respuesta",
@@ -152,38 +218,6 @@ class GestorCarga:
                 mensaje="Consulta recibida", 
                 datos=peticion.payload
             )
-
-        if operacion == "prestamo":
-            # 1. Validar existencia del libro síncronamente
-            print("[Gestor] Validando existencia del libro...")
-            isbn = peticion.payload.get("isbn")
-            validacion = self._consultar_almacenamiento({"action": "consultar_libro", "isbn": isbn})
-            
-            if validacion.get("status") != "ok":
-                print(f"[Gestor] Validación fallida: {validacion}")
-                return Respuesta(
-                    topico="prestamo",
-                    contenido="respuesta",
-                    exito=False,
-                    mensaje=validacion.get("detalle", "El libro no existe"),
-                    datos={"error": validacion.get("error")}
-                )
-
-            # 2. Si existe, enviar préstamo por PUB/SUB
-            print("[Gestor] Libro validado, procesando préstamo...")
-            mensaje = peticion.raw if hasattr(peticion, 'raw') else {"payload": peticion.payload}
-            print(f"[Gestor] Publicando evento 'prestamo': {mensaje}")
-            self.publicar_evento(operacion, mensaje)
-            print("[Gestor] Evento publicado, creando respuesta...")
-            respuesta = Respuesta(
-                topico="prestamo",
-                contenido="respuesta",
-                exito=True, 
-                mensaje="Préstamo enviado a procesamiento", 
-                datos={}
-            )
-            print(f"[Gestor] Respuesta creada: {respuesta}")
-            return respuesta
 
         return Respuesta(
             topico="error",

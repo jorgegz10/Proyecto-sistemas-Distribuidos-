@@ -7,7 +7,8 @@ def mostrar_menu() -> None:
     print("  1) Préstamo por ISBN")
     print("  2) Préstamo por Título")
     print("  3) Consulta por ISBN")
-    print("  4) Devolución por ISBN")
+    print("  4) Renovación por ISBN")
+    print("  5) Devolución por ISBN")
     print("  0) Salir")
 
 def enviarPeticion(socket_req, operacion, data):
@@ -56,6 +57,9 @@ def main():
                 isbn = input("ISBN para consulta: ").strip()
                 enviarPeticion(socket_req, "consulta", {"isbn": isbn})
             elif opcion == "4":
+                isbn = input("ISBN para renovación: ").strip()
+                enviarPeticion(socket_req, "renovacion", {"isbn": isbn, "usuario": "usuario_demo"})
+            elif opcion == "5":
                 isbn = input("ISBN para devolución: ").strip()
                 enviarPeticion(socket_req, "devolucion", {"isbn": isbn, "usuario": "usuario_demo"})
             else:
