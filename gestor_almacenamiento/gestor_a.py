@@ -4,7 +4,7 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 from datetime import datetime, timedelta
 
-# === Config DB desde variables de entorno ===
+# Config DB desde variables de entorno
 DB_HOST = os.getenv("DB_HOST", "postgres_primary")     
 DB_PORT = int(os.getenv("DB_PORT", "5432"))    
 DB_STANDBY_HOST = os.getenv("DB_STANDBY_HOST", "postgres_replica")  # Cambiado a postgres_replica
@@ -18,9 +18,9 @@ current_db_port = DB_PORT
 last_failover_time = None
 
 
-# ===== Helpers de base de datos =====
+# Helpers de base de datos
 def is_connection_read_only(conn):
-    """Verifica si la conexión actual es de solo lectura (standby)."""
+    # Verifica si la conexión actual es de solo lectura
     try:
         with conn.cursor() as cur:
             cur.execute("SHOW transaction_read_only;")
@@ -53,65 +53,6 @@ def connect_db_with_failover(preferred_host=None):
         # Si se especifica un host preferido, probar ese primero con ambos puertos
         hosts_to_try.append((preferred_host, DB_PORT))
         hosts_to_try.append((preferred_host, 5433))
-    else:
-        # Intentar primero el host y puerto actuales
-        hosts_to_try.append((current_db_host, current_db_port))
-        
-        # Luego intentar el host actual con el puerto alternativo
-        alt_port = 5433 if current_db_port == 5432 else 5432
-        hosts_to_try.append((current_db_host, alt_port))
-        
-        # Luego intentar el host alternativo con ambos puertos
-        alternate_host = DB_STANDBY_HOST if current_db_host == DB_HOST else DB_HOST
-        hosts_to_try.append((alternate_host, 5432))
-        hosts_to_try.append((alternate_host, 5433))
-    
-    # Asegurar que probamos todas las combinaciones principales
-    for host in [DB_HOST, DB_STANDBY_HOST]:
-        for port in [5432, 5433]:
-            if (host, port) not in hosts_to_try:
-                hosts_to_try.append((host, port))
-    
-    last_error = None
-    for host, port in hosts_to_try:
-        try:
-            print(f"[DB] Intentando conectar a {host}:{port}...")
-            conn = psycopg2.connect(
-                host=host,
-                port=port,
-                dbname=DB_NAME,
-                user=DB_USER,
-                password=DB_PASS,
-                connect_timeout=5
-            )
-            conn.autocommit = False
-            
-            # Verificar que no sea read-only
-            if is_connection_read_only(conn):
-                print(f"[DB] ⚠️  {host}:{port} está en modo read-only (standby), intentando otro...")
-                conn.close()
-                continue
-            
-            # Conexión exitosa y de escritura
-            if host != current_db_host or port != current_db_port:
-                print(f"[DB] ✅ FAILOVER: Cambiando de {current_db_host}:{current_db_port} a {host}:{port}")
-                current_db_host = host
-                current_db_port = port
-                last_failover_time = datetime.now()
-            else:
-                print(f"[DB] ✅ Conectado a {host}:{port}")
-            
-            return conn, host
-            
-        except Exception as e:
-            last_error = e
-            print(f"[DB] ❌ Error conectando a {host}:{port}: {e}")
-            continue
-    
-    # Si llegamos aquí, no pudimos conectar a ningún host
-    raise Exception(f"No se pudo conectar a ningún host de PostgreSQL. Último error: {last_error}")
-
-
 
 
 def connect_db():
@@ -133,7 +74,7 @@ def reconnect_db_if_needed(conn):
             cur.execute("SELECT 1;")
         return conn
     except Exception as e:
-        print(f"[DB] ⚠️  Conexión perdida: {e}. Intentando reconectar...")
+        print(f"[DB] Conexión perdida: {e}. Intentando reconectar...")
         try:
             conn.close()
         except Exception:
@@ -178,14 +119,12 @@ def validar_renovacion(conn, isbn, usuario):
 def actualizar_renovacion(conn, isbn, usuario, nueva_fecha=None):
     """
     Actualiza una renovación de préstamo.
-    Valida que no se exceda el límite de 2 renovaciones.
-    
-    Returns:
-        Dict con status/error
+    Que no se exceda 2 renovaciones.
+
     """
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            # 1) Verificar préstamo existente
+            # Verificar préstamo existente
             cur.execute(
                 "SELECT renovaciones, estado, fecha_devolucion FROM prestamos WHERE isbn=%s AND usuario=%s;",
                 (isbn, usuario)
@@ -204,21 +143,21 @@ def actualizar_renovacion(conn, isbn, usuario, nueva_fecha=None):
                     "detalle": f"El préstamo no está activo (estado: {prestamo['estado']})"
                 }
             
-            # 2) Validar límite de renovaciones
+            # Validar límite de renovaciones
             if prestamo["renovaciones"] >= 2:
                 return {
                     "error": "LimiteRenovaciones",
                     "detalle": f"Se alcanzó el límite de 2 renovaciones (actual: {prestamo['renovaciones']})"
                 }
             
-            # 3) Calcular nueva fecha de devolución (+7 días desde la actual)
+            # Calcular nueva fecha de devolución (+7 días desde la actual)
             if nueva_fecha is None:
                 fecha_actual = prestamo["fecha_devolucion"]
                 nueva_fecha_calculada = fecha_actual + timedelta(days=7)
             else:
                 nueva_fecha_calculada = nueva_fecha
             
-            # 4) Actualizar préstamo
+            # Actualizar préstamo
             cur.execute("""
                 UPDATE prestamos
                 SET fecha_devolucion = %s,
@@ -249,9 +188,7 @@ def actualizar_renovacion(conn, isbn, usuario, nueva_fecha=None):
 
 
 def consultar_libro(conn, isbn):
-    """
-    Consulta si un libro existe y retorna sus datos.
-    """
+    # Consulta si un libro existe y retorna sus datos
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("SELECT * FROM libros WHERE isbn=%s;", (isbn,))
@@ -268,7 +205,7 @@ def consultar_libro(conn, isbn):
 def aplicar_devolucion(conn, isbn, usuario):    
     try:
         with conn.cursor() as cur:
-            # 1) marcar préstamo como DEVUELTO; si no existe, lo creamos DEVUELTO
+            # Marcar préstamo como DEVUELTO; si no existe, se cre como DEVUELTO
             cur.execute("""
                 UPDATE prestamos
                    SET estado='DEVUELTO', fecha_devolucion=NOW()
@@ -281,7 +218,7 @@ def aplicar_devolucion(conn, isbn, usuario):
                     ON CONFLICT (isbn, usuario) DO NOTHING;
                 """, (isbn, usuario))
 
-            # 2) incrementar ejemplares del libro (UPSERT)
+            # Incrementar ejemplares del libro 
             cur.execute("""
                 INSERT INTO libros(isbn, ejemplares)
                 VALUES (%s, 1)
@@ -305,13 +242,11 @@ def procesar_prestamo(conn, isbn, usuario):
         conn: Conexión a la base de datos
         isbn: ISBN del libro a prestar
         usuario: ID/nombre del usuario
-        
-    Returns:
-        Dict con status/error y detalles del préstamo
+    
     """
     try:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            # 1) Verificar que el libro existe y tiene ejemplares disponibles
+            # Verificar que el libro existe y tiene ejemplares disponibles
             cur.execute(
                 "SELECT ejemplares FROM libros WHERE isbn=%s;",
                 (isbn,)
@@ -330,7 +265,7 @@ def procesar_prestamo(conn, isbn, usuario):
                     "detalle": f"No hay ejemplares disponibles del libro {isbn}"
                 }
             
-            # 2) Verificar que el usuario no tenga ya un préstamo activo de este libro
+            # Verificar que el usuario no tenga ya un préstamo activo de este libro
             cur.execute(
                 "SELECT estado FROM prestamos WHERE isbn=%s AND usuario=%s;",
                 (isbn, usuario)
@@ -343,11 +278,11 @@ def procesar_prestamo(conn, isbn, usuario):
                     "detalle": f"El usuario {usuario} ya tiene un préstamo activo del libro {isbn}"
                 }
             
-            # 3) Calcular fecha de devolución (14 días desde hoy)
+            # Calcular fecha de devolución (14 días desde hoy)
             fecha_prestamo = datetime.now()
             fecha_devolucion = fecha_prestamo + timedelta(days=14)
             
-            # 4) Crear o actualizar el préstamo
+            # Crear o actualizar el préstamo
             cur.execute("""
                 INSERT INTO prestamos (isbn, usuario, estado, fecha_devolucion, renovaciones)
                 VALUES (%s, %s, 'ACTIVO', %s, 0)
@@ -357,7 +292,7 @@ def procesar_prestamo(conn, isbn, usuario):
                               renovaciones=0;
             """, (isbn, usuario, fecha_devolucion, fecha_devolucion))
             
-            # 5) Decrementar ejemplares disponibles
+            # Decrementar ejemplares disponibles
             cur.execute("""
                 UPDATE libros 
                 SET ejemplares = ejemplares - 1
@@ -386,7 +321,7 @@ def procesar_prestamo(conn, isbn, usuario):
         }
 
 
-# ===== ZMQ REP Server =====
+# ZMQ REP Server 
 def main():
     # ZMQ
     context = zmq.Context()
@@ -452,16 +387,16 @@ def main():
 
         except psycopg2.OperationalError as e:
             # Error de conexión - intentar reconectar
-            print(f"[DB] ❌ Error de conexión a la base de datos: {e}")
+            print(f"[DB] Error de conexión a la base de datos: {e}")
             try:
                 conn = connect_db()
-                print(f"[DB] ✅ Reconexión exitosa a {current_db_host}")
+                print(f"[DB] Reconexión exitosa a {current_db_host}")
                 socket_rep.send_json({
                     "error": "ErrorConexionDB",
                     "detalle": "Se perdió la conexión a la base de datos, reintente la operación"
                 })
             except Exception as reconnect_error:
-                print(f"[DB] ❌ Fallo la reconexión: {reconnect_error}")
+                print(f"[DB] Fallo la reconexión: {reconnect_error}")
                 socket_rep.send_json({
                     "error": "ErrorConexionDB",
                     "detalle": f"No se pudo reconectar a la base de datos: {str(reconnect_error)}"
