@@ -5,12 +5,21 @@ Script para probar el sistema de préstamos, renovaciones y devoluciones
 import zmq
 import json
 import time
+import sys
+import os
 
-def conectar_gestor_carga():
+def conectar_gestor_carga(host="localhost"):
     """Conecta al gestor de carga"""
     context = zmq.Context()
     socket = context.socket(zmq.REQ)
-    socket.connect("tcp://localhost:5555")
+    
+    # Permitir configurar via variable de entorno o parámetro
+    gestor_host = os.getenv("GESTOR_CARGA_HOST", host)
+    gestor_port = os.getenv("GESTOR_CARGA_PORT", "5555")
+    addr = f"tcp://{gestor_host}:{gestor_port}"
+    
+    print(f"🔌 Conectando a gestor de carga en: {addr}")
+    socket.connect(addr)
     socket.setsockopt(zmq.RCVTIMEO, 5000)  # 5 segundos de timeout
     return socket
 
@@ -37,7 +46,10 @@ def main():
     print("🧪 PRUEBA DEL SISTEMA DE BIBLIOTECA")
     print("=" * 70)
     
-    socket = conectar_gestor_carga()
+    # Obtener host del gestor de carga desde argumentos o usar localhost
+    host = sys.argv[1] if len(sys.argv) > 1 else "localhost"
+    
+    socket = conectar_gestor_carga(host)
     
     # Datos de prueba
     isbn = "978-0134685991"
@@ -102,9 +114,13 @@ def main():
     print("\n" + "="*70)
     print("✅ PRUEBAS COMPLETADAS")
     print("="*70)
-    print("\n Verificar la base de datos con:")
+    print("\n💡 Verificar la base de datos con:")
     print("   docker exec -it postgres_library psql -U app -d library -c \"SELECT * FROM libros;\"")
     print("   docker exec -it postgres_library psql -U app -d library -c \"SELECT * FROM prestamos;\"")
+    print("\n💡 Uso del script:")
+    print("   python test_sistema.py                    # Conecta a localhost")
+    print("   python test_sistema.py 192.168.1.100      # Conecta a IP específica")
+    print("   $env:GESTOR_CARGA_HOST=\"192.168.1.100\"; python test_sistema.py")
 
 if __name__ == "__main__":
     try:
