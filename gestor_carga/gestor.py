@@ -1,6 +1,7 @@
 import zmq
 import json
-from typing import Dict, Any
+import os
+from typing import Dict, Any, List, Optional
 from types import SimpleNamespace
 from datetime import datetime, timedelta
 
@@ -49,6 +50,32 @@ class GestorCarga:
         self.replier = ZMQReplier(context, "tcp://*:5555")
         self.router = MessageRouter()
         self.actores: Dict[str, Any] = {}
+        
+        # Configurar múltiples endpoints de almacenamiento para failover
+        self.storage_endpoints = self._get_storage_endpoints()
+        self.current_storage_index = 0
+        self.circuit_breakers: Dict[str, CircuitBreaker] = {}
+        
+        # Inicializar circuit breaker para cada endpoint de almacenamiento
+        for endpoint in self.storage_endpoints:
+            self.circuit_breakers[endpoint] = CircuitBreaker()
+        
+        print(f"[Gestor] 🔧 Configurado con {len(self.storage_endpoints)} endpoints de almacenamiento")
+        for ep in self.storage_endpoints:
+            print(f"[Gestor]    - {ep}")
+    
+    def _get_storage_endpoints(self) -> List[str]:
+        """Obtiene lista de endpoints de almacenamiento (para failover)"""
+        # Permite configurar múltiples endpoints via variable de entorno
+        # Formato: "host1:port1,host2:port2"
+        endpoints_env = os.getenv("GESTOR_ALMACENAMIENTO_ENDPOINTS", "gestor_almacenamiento:5570")
+        endpoints = []
+        for ep in endpoints_env.split(","):
+            ep = ep.strip()
+            if "://" not in ep:
+                ep = f"tcp://{ep}"
+            endpoints.append(ep)
+        return endpoints
 
     def recibir_peticion(self) -> SimpleNamespace:
         msg = self.replier.receive()
@@ -69,53 +96,96 @@ class GestorCarga:
 
     def publicar_evento(self, topic: str, mensaje: Dict[str, Any]) -> None:
         self.publisher.publish(topic, json.dumps(mensaje))
+    
+    def _connect_to_storage_with_failover(self, request_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Intenta conectar al almacenamiento con failover automático entre endpoints"""
+        max_attempts = len(self.storage_endpoints) * 2  # Intentar cada endpoint 2 veces
+        
+        for attempt in range(max_attempts):
+            endpoint = self.storage_endpoints[self.current_storage_index]
+            cb = self.circuit_breakers[endpoint]
+            
+            # Verificar si el circuit breaker está abierto
+            if cb.is_open():
+                print(f"[Gestor] ⚠️  Circuit breaker ABIERTO para {endpoint}, probando siguiente...")
+                self.current_storage_index = (self.current_storage_index + 1) % len(self.storage_endpoints)
+                continue
+            
+            try:
+                print(f"[Gestor] 🔄 Conectando a {endpoint} (intento {attempt + 1}/{max_attempts})")
+                
+                req = self.context.socket(zmq.REQ)
+                req.RCVTIMEO = 3000  # 3 segundos timeout
+                req.SNDTIMEO = 3000
+                req.connect(endpoint)
+                
+                req.send_json(request_data)
+                response = req.recv_json()
+                req.close()
+                
+                # Éxito - resetear circuit breaker
+                cb.on_success()
+                print(f"[Gestor] ✅ Conexión exitosa a {endpoint}")
+                return response
+                
+            except zmq.Again:
+                print(f"[Gestor] ⏱️  Timeout en {endpoint}")
+                cb.on_failure()
+                try:
+                    req.close()
+                except:
+                    pass
+                self.current_storage_index = (self.current_storage_index + 1) % len(self.storage_endpoints)
+                
+            except Exception as e:
+                print(f"[Gestor] ❌ Error en {endpoint}: {e}")
+                cb.on_failure()
+                try:
+                    req.close()
+                except:
+                    pass
+                self.current_storage_index = (self.current_storage_index + 1) % len(self.storage_endpoints)
+        
+        print("[Gestor] ⛔ TODOS los endpoints de almacenamiento fallaron")
+        return None
 
     def enrutar_prestamo(self, peticion: SimpleNamespace) -> Respuesta:
         operacion = peticion.payload.get("operacion", "desconocida")
         if operacion == "renovacion":
-            # Comunicación SÍNCRONA con gestor de almacenamiento para obtener resultado real
-            print("[Gestor] Procesando renovación síncrona...")
+            # Comunicación SÍNCRONA con gestor de almacenamiento CON FAILOVER
+            print("[Gestor] 📋 Procesando renovación síncrona con failover...")
             isbn = peticion.payload.get("isbn")
             usuario = peticion.payload.get("usuario")
             
-            try:
-                # Conectar directamente al gestor de almacenamiento
-                req = self.context.socket(zmq.REQ)
-                req.RCVTIMEO = 5000
-                req.SNDTIMEO = 5000
-                req.connect("tcp://gestor_almacenamiento:5570")
-                
-                # Solicitar renovación
-                req.send_json({"action": "actualizar_renovacion", "isbn": isbn, "usuario": usuario})
-                response = req.recv_json()
-                req.close()
-                
-                print(f"[Gestor] Respuesta de almacenamiento: {response}")
-                
-                if response.get("status") == "ok":
-                    return Respuesta(
-                        topico="renovacion",
-                        contenido="respuesta",
-                        exito=True,
-                        mensaje="Renovación completada exitosamente",
-                        datos=response.get("datos", {})
-                    )
-                else:
-                    return Respuesta(
-                        topico="renovacion",
-                        contenido="respuesta",
-                        exito=False,
-                        mensaje=response.get("detalle", "Error al renovar"),
-                        datos={"error": response.get("error")}
-                    )
-            except Exception as e:
-                print(f"[Gestor] Error al procesar renovación: {e}")
+            request_data = {"action": "actualizar_renovacion", "isbn": isbn, "usuario": usuario}
+            response = self._connect_to_storage_with_failover(request_data)
+            
+            if response is None:
                 return Respuesta(
                     topico="renovacion",
                     contenido="respuesta",
                     exito=False,
-                    mensaje=f"Error al procesar renovación: {str(e)}",
-                    datos={}
+                    mensaje="⛔ Servicio de almacenamiento no disponible (todos los servidores fallaron)",
+                    datos={"error": "Failover completo - sin servidores disponibles"}
+                )
+            
+            print(f"[Gestor] Respuesta de almacenamiento: {response}")
+            
+            if response.get("status") == "ok":
+                return Respuesta(
+                    topico="renovacion",
+                    contenido="respuesta",
+                    exito=True,
+                    mensaje="Renovación completada exitosamente",
+                    datos=response.get("datos", {})
+                )
+            else:
+                return Respuesta(
+                    topico="renovacion",
+                    contenido="respuesta",
+                    exito=False,
+                    mensaje=response.get("detalle", "Error al renovar"),
+                    datos={"error": response.get("error")}
                 )
         if operacion == "devolucion":
             # vía pub/sub
