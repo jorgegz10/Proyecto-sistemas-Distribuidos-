@@ -373,15 +373,21 @@ def main():
     print("[GestorAlmacenamiento] Esquema de base de datos verificado")
     print("[GestorAlmacenamiento] Listo para recibir peticiones...")
 
-    request_count = 0
     while True:
         try:
-            # Verificar conexión cada 10 requests
-            request_count += 1
-            if request_count % 10 == 0:
-                conn = reconnect_db_if_needed(conn)
-            
             req = socket_rep.recv_json()
+            
+            # Verificar y reconectar si es necesario ANTES de cada operación
+            try:
+                conn = reconnect_db_if_needed(conn)
+            except Exception as e:
+                print(f"[DB] Error al verificar/reconectar: {e}")
+                socket_rep.send_json({
+                    "status": "error",
+                    "error": "ErrorConexionDB",
+                    "detalle": f"No se pudo conectar a la base de datos: {str(e)}"
+                })
+                continue
 
             # Acepta "action" o "accion"
             action = req.get("action") or req.get("accion")  
@@ -421,19 +427,26 @@ def main():
 
             socket_rep.send_json(resp)
 
-        except psycopg2.OperationalError as e:
+        except (psycopg2.OperationalError, psycopg2.InterfaceError) as e:
             # Error de conexión - intentar reconectar
             print(f"[DB] Error de conexión a la base de datos: {e}")
             try:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
                 conn = connect_db()
                 print(f"[DB] Reconexión exitosa a {current_db_host}")
+                # Reenviar mensaje de error para que el cliente reintente
                 socket_rep.send_json({
+                    "status": "error",
                     "error": "ErrorConexionDB",
-                    "detalle": "Se perdió la conexión a la base de datos, reintente la operación"
+                    "detalle": "Se perdió la conexión a la base de datos, se reconectó. Por favor reintente la operación."
                 })
             except Exception as reconnect_error:
                 print(f"[DB] Fallo la reconexión: {reconnect_error}")
                 socket_rep.send_json({
+                    "status": "error",
                     "error": "ErrorConexionDB",
                     "detalle": f"No se pudo reconectar a la base de datos: {str(reconnect_error)}"
                 })
@@ -441,8 +454,14 @@ def main():
             break
         except Exception as e:
             print(f"[ERROR] Excepción no manejada: {e}")
+            import traceback
+            traceback.print_exc()
             try:
-                socket_rep.send_json({"error": str(e)})
+                socket_rep.send_json({
+                    "status": "error",
+                    "error": "ErrorInterno",
+                    "detalle": str(e)
+                })
             except Exception:
                 pass
 

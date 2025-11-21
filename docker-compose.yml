@@ -26,7 +26,9 @@ services:
 
   # Base de datos PostgreSQL RÉPLICA
   postgres_replica:
-    image: postgres:16
+    build:
+      context: ./postgres-replication
+      dockerfile: Dockerfile
     container_name: postgres_replica
     environment:
       POSTGRES_USER: app
@@ -35,8 +37,6 @@ services:
       - "5433:5432"
     volumes:
       - postgres_replica_data:/var/lib/postgresql/data
-      - ./postgres-replication/entrypoint-replica.sh:/usr/local/bin/entrypoint-replica.sh:ro
-    entrypoint: [ "entrypoint-replica.sh" ]
     depends_on:
       postgres_primary:
         condition: service_healthy

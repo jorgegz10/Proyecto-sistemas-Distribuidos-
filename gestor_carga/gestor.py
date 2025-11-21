@@ -93,15 +93,16 @@ class GestorCarga:
         
         if operacion == "prestamo":
             print("[Gestor] Procesando préstamo...")
+            req = None
             try:
                 req = self.context.socket(zmq.REQ)
-                req.RCVTIMEO = 5000
-                req.SNDTIMEO = 5000
+                req.setsockopt(zmq.RCVTIMEO, 5000)
+                req.setsockopt(zmq.SNDTIMEO, 5000)
+                req.setsockopt(zmq.LINGER, 0)
                 req.connect("tcp://actor_prestamo:5560")
                 
                 req.send_json({"isbn": isbn, "usuario": usuario})
                 response = req.recv_json()
-                req.close()
                 
                 print(f"[Gestor] Respuesta del actor: {response}")
                 
@@ -121,6 +122,15 @@ class GestorCarga:
                         mensaje=response.get("error", "Error al procesar préstamo"),
                         datos={"error": response.get("detalle")}
                     )
+            except zmq.error.Again:
+                print(f"[Gestor] Timeout esperando respuesta del actor de préstamo")
+                return Respuesta(
+                    topico="prestamo",
+                    contenido="respuesta",
+                    exito=False,
+                    mensaje="Servicio de préstamo no disponible",
+                    datos={}
+                )
             except Exception as e:
                 print(f"[Gestor] Error: {e}")
                 return Respuesta(
@@ -130,18 +140,22 @@ class GestorCarga:
                     mensaje=f"Error al procesar préstamo: {str(e)}",
                     datos={}
                 )
+            finally:
+                if req:
+                    req.close()
                 
         elif operacion == "renovacion":
             print("[Gestor] Procesando renovación...")
+            req = None
             try:
                 req = self.context.socket(zmq.REQ)
-                req.RCVTIMEO = 5000
-                req.SNDTIMEO = 5000
+                req.setsockopt(zmq.RCVTIMEO, 5000)
+                req.setsockopt(zmq.SNDTIMEO, 5000)
+                req.setsockopt(zmq.LINGER, 0)
                 req.connect("tcp://actor_renovacion:5561")
                 
                 req.send_json({"isbn": isbn, "usuario": usuario})
                 response = req.recv_json()
-                req.close()
                 
                 print(f"[Gestor] Respuesta del actor: {response}")
                 
@@ -161,6 +175,15 @@ class GestorCarga:
                         mensaje=response.get("error", "Error al renovar"),
                         datos={}
                     )
+            except zmq.error.Again:
+                print("[Gestor] Timeout esperando respuesta del actor de renovación")
+                return Respuesta(
+                    topico="renovacion",
+                    contenido="respuesta",
+                    exito=False,
+                    mensaje="Servicio de renovación no disponible",
+                    datos={}
+                )
             except Exception as e:
                 print(f"[Gestor] Error: {e}")
                 return Respuesta(
@@ -170,18 +193,22 @@ class GestorCarga:
                     mensaje=f"Error al procesar renovación: {str(e)}",
                     datos={}
                 )
+            finally:
+                if req:
+                    req.close()
                 
         elif operacion == "devolucion":
             print("[Gestor] Procesando devolución...")
+            req = None
             try:
                 req = self.context.socket(zmq.REQ)
-                req.RCVTIMEO = 5000
-                req.SNDTIMEO = 5000
+                req.setsockopt(zmq.RCVTIMEO, 5000)
+                req.setsockopt(zmq.SNDTIMEO, 5000)
+                req.setsockopt(zmq.LINGER, 0)
                 req.connect("tcp://actor_devolucion:5562")
                 
                 req.send_json({"isbn": isbn, "usuario": usuario})
                 response = req.recv_json()
-                req.close()
                 
                 print(f"[Gestor] Respuesta del actor: {response}")
                 
@@ -201,6 +228,15 @@ class GestorCarga:
                         mensaje=response.get("error", "Error al procesar devolución"),
                         datos={}
                     )
+            except zmq.error.Again:
+                print("[Gestor] Timeout esperando respuesta del actor de devolución")
+                return Respuesta(
+                    topico="devolucion",
+                    contenido="respuesta",
+                    exito=False,
+                    mensaje="Servicio de devolución no disponible",
+                    datos={}
+                )
             except Exception as e:
                 print(f"[Gestor] Error: {e}")
                 return Respuesta(
@@ -210,6 +246,9 @@ class GestorCarga:
                     mensaje=f"Error al procesar devolución: {str(e)}",
                     datos={}
                 )
+            finally:
+                if req:
+                    req.close()
 
         elif operacion == "consulta":
             return Respuesta(
