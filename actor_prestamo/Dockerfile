@@ -15,5 +15,5 @@ COPY ./actor_prestamo/requirements.txt /app/requirements.txt
 # Instalar dependencias
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Arranque
-CMD ["python", "prestamo.py"]
+# Arranque (con -u para deshabilitar buffering de Python)
+CMD ["python", "-u", "prestamo.py"]

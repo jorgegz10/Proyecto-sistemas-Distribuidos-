@@ -15,4 +15,4 @@ COPY ./actor_devolucion/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Arranque
-CMD ["python", "devolucion.py"]
+CMD ["python", "-u", "devolucion.py"]

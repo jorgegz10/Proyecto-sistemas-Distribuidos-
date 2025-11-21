@@ -1,6 +1,27 @@
 # docker-compose.yml documentado
 
 services:
+  # Base de datos PostgreSQL para el gestor de almacenamiento
+  postgres:
+    image: postgres:16
+    container_name: postgres_library
+    environment:
+      POSTGRES_DB: library
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d library"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   # Servicio principal que gestiona las comunicaciones ZMQ y balancea carga
   gestor_carga:
     build:
@@ -19,8 +40,17 @@ services:
       context: .
       dockerfile: ./gestor_almacenamiento/Dockerfile
     container_name: gestor_almacenamiento
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: library
+      DB_USER: app
+      DB_PASS: app
     ports:
       - "5570:5570"
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks:
       - backend
 
@@ -137,3 +167,7 @@ services:
 networks:
   backend:
     driver: bridge
+
+# Volúmenes persistentes
+volumes:
+  postgres_data:

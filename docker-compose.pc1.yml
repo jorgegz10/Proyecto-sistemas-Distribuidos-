@@ -1,0 +1,67 @@
+# docker-compose.pc1.yml
+# PC1 - SERVIDOR PRINCIPAL (LOCAL)
+# Este PC ejecuta: Gestor de Carga, Gestor de Almacenamiento, PostgreSQL
+# Los actores corren en PC2 y PC3
+
+services:
+  # Base de datos PostgreSQL
+  postgres:
+    image: postgres:16
+    container_name: postgres_library
+    environment:
+      POSTGRES_DB: library
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d library"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Gestor de Carga - NÚCLEO del sistema
+  gestor_carga:
+    build:
+      context: .
+      dockerfile: ./gestor_carga/Dockerfile
+    container_name: gestor_carga
+    ports:
+      - "5555:5555"  # REQ/REP - DEBE ser accesible desde PC2 y PC3
+      - "5556:5556"  # PUB/SUB - DEBE ser accesible desde PC2 y PC3
+    networks:
+      - backend
+    restart: unless-stopped
+
+  # Gestor de Almacenamiento
+  gestor_almacenamiento:
+    build:
+      context: .
+      dockerfile: ./gestor_almacenamiento/Dockerfile
+    container_name: gestor_almacenamiento
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: library
+      DB_USER: app
+      DB_PASS: app
+    ports:
+      - "5570:5570"  # DEBE ser accesible desde PC2 y PC3
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - backend
+    restart: unless-stopped
+
+networks:
+  backend:
+    driver: bridge
+
+volumes:
+  postgres_data:

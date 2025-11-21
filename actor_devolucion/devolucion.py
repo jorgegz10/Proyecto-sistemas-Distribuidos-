@@ -44,3 +44,57 @@ class Devolucion(Actor):
             self._req.close(0)
         except Exception:
             pass
+
+
+def main():
+    """Punto de entrada principal del actor de devolución"""
+    import json
+    
+    print("[ActorDevolucion] Iniciando...")
+    
+    # Configurar conexión al gestor de carga (PUB/SUB)
+    context = zmq.Context()
+    socket_sub = context.socket(zmq.SUB)
+    
+    # Conectar al publisher del gestor de carga
+    gestor_pub_addr = os.getenv("GESTOR_CARGA_PUB_ADDR", "tcp://gestor_carga:5556")
+    print(f"[ActorDevolucion] Conectando a {gestor_pub_addr}")
+    socket_sub.connect(gestor_pub_addr)
+    
+    # Suscribirse al tópico "devolucion"
+    socket_sub.setsockopt_string(zmq.SUBSCRIBE, "devolucion")
+    print("[ActorDevolucion] Suscrito al tópico 'devolucion'")
+    
+    # Crear instancia del actor
+    actor = Devolucion()
+    print("[ActorDevolucion] Listo para procesar devoluciones")
+    
+    # Bucle principal
+    while True:
+        try:
+            # Recibir mensaje (formato: "topico {json}")
+            raw_msg = socket_sub.recv_string()
+            parts = raw_msg.split(" ", 1)
+            
+            if len(parts) == 2:
+                _, data_str = parts
+                msg = json.loads(data_str)
+                
+                print(f"[ActorDevolucion] Mensaje recibido: {msg}")
+                result = actor.handle(msg)
+                print(f"[ActorDevolucion] Resultado: {result}")
+            
+        except KeyboardInterrupt:
+            print("\n[ActorDevolucion] Deteniendo...")
+            break
+        except Exception as e:
+            print(f"[ActorDevolucion] Error: {e}")
+    
+    # Limpieza
+    socket_sub.close()
+    context.term()
+    print("[ActorDevolucion] Terminado")
+
+
+if __name__ == "__main__":
+    main()

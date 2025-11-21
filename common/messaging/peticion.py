@@ -1,5 +1,7 @@
 from .mensaje import Mensaje
-from .tipo_operacion import TipoOperacion  # Make sure this import path is correct
+from common.domain.tipos import TipoOperacion  # Make sure this import path is correct
+
+from datetime import datetime
 
 class Peticion(Mensaje):
     tipoOperacion: TipoOperacion
