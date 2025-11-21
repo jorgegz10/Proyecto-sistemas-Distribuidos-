@@ -1,0 +1,27 @@
+# Archivo de solicitudes de devolución para pruebas de carga
+# Formato: DEVO ISBN usuario
+DEVO Libro456 usuario1
+DEVO Libro789 usuario2
+DEVO Libro321 usuario3
+DEVO Libro100 usuario4
+DEVO Libro222 usuario5
+DEVO Libro333 usuario6
+DEVO Libro444 usuario7
+DEVO Libro555 usuario8
+DEVO Libro666 usuario9
+DEVO Libro777 usuario10
+DEVO Libro888 usuario1
+DEVO Libro999 usuario2
+DEVO Libro111 usuario3
+DEVO Libro123 usuario4
+DEVO Libro234 usuario5
+DEVO Libro345 usuario6
+DEVO Libro567 usuario7
+DEVO Libro678 usuario8
+DEVO Libro890 usuario9
+DEVO Libro901 usuario10
+DEVO Libro012 usuario1
+DEVO Libro135 usuario2
+DEVO Libro246 usuario3
+DEVO Libro357 usuario4
+DEVO Libro468 usuario5
