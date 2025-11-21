@@ -43,6 +43,27 @@ services:
     networks:
       - backend
 
+  # Monitor de Failover Automático
+  failover_monitor:
+    build:
+      context: ./failover_monitor
+      dockerfile: Dockerfile
+    container_name: failover_monitor
+    environment:
+      PRIMARY_HOST: postgres_primary
+      REPLICA_HOST: postgres_replica
+      CHECK_INTERVAL: 5 # Revisar cada 5 segundos
+      FAILOVER_COOLDOWN: 60
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock # Necesario para ejecutar comandos docker
+    depends_on:
+      postgres_primary:
+        condition: service_healthy
+      postgres_replica:
+        condition: service_started
+    networks:
+      - backend
+
   # Servicio principal que gestiona las comunicaciones ZMQ y balancea carga
   gestor_carga:
     build:
