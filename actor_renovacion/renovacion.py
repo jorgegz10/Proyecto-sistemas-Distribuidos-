@@ -76,29 +76,54 @@ def main():
     # SUB socket para eventos pub/sub
     socket_sub = context.socket(zmq.SUB)
     gc_pub_addr = os.getenv("GESTOR_CARGA_PUB_ADDR", "tcp://gestor_carga:5556")
-
-    print(f"[ActorRenovacion] Conectando PUB/SUB a {gc_pub_addr}")
     socket_sub.connect(gc_pub_addr)
     socket_sub.setsockopt_string(zmq.SUBSCRIBE, ActorRenovacion.topic)
 
-    print("[ActorRenovacion] Suscrito al tópico 'renovacion', esperando mensajes...")
+    # REP socket para peticiones síncronas del gestor
+    socket_rep = context.socket(zmq.REP)
+    socket_rep.bind("tcp://*:5561")
+
+    poller = zmq.Poller()
+    poller.register(socket_sub, zmq.POLLIN)
+    poller.register(socket_rep, zmq.POLLIN)
+
+    print(f"[ActorRenovacion] PUB/SUB conectado a {gc_pub_addr}, REP escuchando en 5561")
 
     actor = ActorRenovacion()
 
     try:
         while True:
-            try:
-                raw = socket_sub.recv_string()
-                topic, data = raw.split(" ", 1)
-                msg = json.loads(data)
-                result = actor.handle(msg)
-                print(f"[ActorRenovacion] Resultado: {result}")
-            except Exception as e:
-                print(f"[ActorRenovacion] Error al procesar mensaje: {e}")
+            events = dict(poller.poll())
+            
+            if socket_sub in events:
+                try:
+                    raw = socket_sub.recv_string()
+                    topic, data = raw.split(" ", 1)
+                    msg = json.loads(data)
+                    result = actor.handle(msg)
+                    print(f"[ActorRenovacion] Evento resultado: {result}")
+                except Exception as e:
+                    print(f"[ActorRenovacion] Error en PUB/SUB: {e}")
+            
+            if socket_rep in events:
+                try:
+                    req = socket_rep.recv_json()
+                    result = actor.handle(req)
+                    # Normalizar respuesta para gestor_carga
+                    response = {
+                        "exito": result.get("ok", False),
+                        "renovacion": result.get("datos", {}),
+                        "error": result.get("error")
+                    }
+                    socket_rep.send_json(response)
+                    print(f"[ActorRenovacion] Req/Rep resultado: {response}")
+                except Exception as e:
+                    socket_rep.send_json({"exito": False, "error": str(e)})
     except KeyboardInterrupt:
         print("[ActorRenovacion] Interrumpido")
     finally:
         socket_sub.close()
+        socket_rep.close()
         context.term()
 
 

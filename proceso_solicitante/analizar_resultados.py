@@ -1,9 +1,21 @@
 import pandas as pd
+import matplotlib.pyplot as plt
+from pathlib import Path
 
+# Directorio donde están los resultados CSV
+OUT_DIR = Path("test_results")
 
+# Buscar todos los archivos CSV con estadísticas
+archivos = list(OUT_DIR.glob("results_*users_*_stats.csv"))
 
+if not archivos:
+    raise SystemExit(f"No se encontraron archivos CSV en {OUT_DIR}. Ejecuta primero las pruebas de Locust.")
 
+print(f"Archivos encontrados: {len(archivos)}")
+for a in archivos:
+    print(f"  - {a.name}")
 
+rows = []
 
 for archivo in archivos:
     df = pd.read_csv(archivo)
@@ -17,16 +29,15 @@ for archivo in archivos:
         usuarios = int(nombre.split("_")[1].replace("users", ""))
     except Exception:
         usuarios = None
-
-
-# Guardar estadísticas relevantes
-rows.append({
-"Usuarios": usuarios,
-"Tiempo promedio (ms)": float(total["Average Response Time"].iloc[0]),
-"Desv. Std (ms)": None, # Esta columna no está presente
-"Solicitudes procesadas": int(total["Request Count"].iloc[0]),
-"Requests/s": float(total["Requests/s"].iloc[0]),
-})
+    
+    # Guardar estadísticas relevantes
+    rows.append({
+        "Usuarios": usuarios,
+        "Tiempo promedio (ms)": float(total["Average Response Time"].iloc[0]),
+        "Desv. Std (ms)": None,  # Esta columna no está presente
+        "Solicitudes procesadas": int(total["Request Count"].iloc[0]),
+        "Requests/s": float(total["Requests/s"].iloc[0]),
+    })
 
 
 # Validación

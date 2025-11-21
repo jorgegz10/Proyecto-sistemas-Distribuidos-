@@ -53,7 +53,7 @@ def main():
     
     # Datos de prueba
     isbn = "978-0134685991"
-    usuario = "usuario001"
+    usuario = "usuario002"
     
     print(f"\n📚 Libro: {isbn}")
     print(f"👤 Usuario: {usuario}")

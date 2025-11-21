@@ -53,6 +53,42 @@ def connect_db_with_failover(preferred_host=None):
         # Si se especifica un host preferido, probar ese primero con ambos puertos
         hosts_to_try.append((preferred_host, DB_PORT))
         hosts_to_try.append((preferred_host, 5433))
+    else:
+        # Probar host actual primero, luego alternativo
+        hosts_to_try.append((current_db_host, current_db_port))
+        hosts_to_try.append((DB_STANDBY_HOST, 5432))
+        hosts_to_try.append((DB_STANDBY_HOST, 5433))
+    
+    last_error = None
+    for host, port in hosts_to_try:
+        try:
+            print(f"[DB] Intentando conectar a {host}:{port}")
+            conn = psycopg2.connect(
+                host=host,
+                port=port,
+                database=DB_NAME,
+                user=DB_USER,
+                password=DB_PASS,
+                connect_timeout=5
+            )
+            
+            # Verificar que no sea read-only
+            if not is_connection_read_only(conn):
+                print(f"[DB] Conectado exitosamente a {host}:{port}")
+                current_db_host = host
+                current_db_port = port
+                last_failover_time = datetime.now()
+                return conn, host
+            else:
+                print(f"[DB] {host}:{port} es read-only, buscando alternativa...")
+                conn.close()
+        except Exception as e:
+            last_error = e
+            print(f"[DB] Fallo conexión a {host}:{port}: {e}")
+    
+    # Si llegamos aquí, ninguna conexión funcionó
+    print(f"[DB] ERROR: No se pudo conectar a ningún servidor")
+    raise Exception(f"No se pudo conectar a la base de datos: {last_error}")
 
 
 def connect_db():

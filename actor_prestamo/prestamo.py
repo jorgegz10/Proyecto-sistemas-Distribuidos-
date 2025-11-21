@@ -38,7 +38,7 @@ class ActorPrestamo(Actor):
             
             if not isbn or not usuario:
                 print(f"[ActorPrestamo] Datos incompletos: isbn={isbn}, usuario={usuario}")
-                return {"ok": False, "error": "Datos incompletos"}
+                return {"exito": False, "error": "Datos incompletos"}
             
             # Solicitar procesamiento al gestor de almacenamiento
             peticion = {
@@ -57,23 +57,22 @@ class ActorPrestamo(Actor):
             # Procesar respuesta
             if respuesta.get("status") == "ok":
                 return {
-                    "ok": True,
-                    "accion": "prestamo_registrado",
-                    "datos": respuesta.get("datos", {})
+                    "exito": True,
+                    "prestamo": respuesta.get("datos", {})
                 }
             else:
                 return {
-                    "ok": False,
+                    "exito": False,
                     "error": respuesta.get("error", "Error desconocido"),
                     "detalle": respuesta.get("detalle", "")
                 }
                 
         except zmq.error.Again:
             print("[ActorPrestamo] Timeout al comunicarse con almacenamiento")
-            return {"ok": False, "error": "Timeout al comunicarse con almacenamiento"}
+            return {"exito": False, "error": "Timeout al comunicarse con almacenamiento"}
         except Exception as e:
             print(f"[ActorPrestamo] Error al procesar préstamo: {e}")
-            return {"ok": False, "error": str(e)}
+            return {"exito": False, "error": str(e)}
     
     def __del__(self):
         """Limpieza de recursos"""
@@ -120,7 +119,7 @@ def main():
                 socket_rep.send_json(result)
                 print(f"[ActorPrestamo] Req/Rep resultado: {result}")
             except Exception as e:
-                socket_rep.send_json({"ok": False, "error": str(e)})
+                socket_rep.send_json({"exito": False, "error": str(e)})
 
 
 if __name__ == "__main__":

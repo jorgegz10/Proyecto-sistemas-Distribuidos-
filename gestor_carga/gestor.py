@@ -22,10 +22,11 @@ class ZMQReplier:
         self.socket = context.socket(zmq.REP)
         self.socket.bind(endpoint)
 
-    def receive(self) -> Dict[str, Any]:
-        return self.socket.recv_json()
+    def receive(self):
+        message = self.socket.recv_json()
+        return None, message
 
-    def reply(self, message: Dict[str, Any]) -> None:
+    def reply(self, identity, message: Dict[str, Any]) -> None:
         self.socket.send_json(message)
 
 
@@ -51,7 +52,7 @@ class GestorCarga:
         self.actores: Dict[str, Any] = {}
 
     def recibir_peticion(self) -> SimpleNamespace:
-        msg = self.replier.receive()
+        _, msg = self.replier.receive()
         # Siempre se espera 'operacion', 'isbn' y 'usuario'
         operacion = msg.get("operacion")
         isbn = msg.get("isbn")
@@ -96,29 +97,29 @@ class GestorCarga:
                 req = self.context.socket(zmq.REQ)
                 req.RCVTIMEO = 5000
                 req.SNDTIMEO = 5000
-                req.connect("tcp://gestor_almacenamiento:5570")
+                req.connect("tcp://actor_prestamo:5560")
                 
-                req.send_json({"action": "procesar_prestamo", "isbn": isbn, "usuario": usuario})
+                req.send_json({"isbn": isbn, "usuario": usuario})
                 response = req.recv_json()
                 req.close()
                 
-                print(f"[Gestor] Respuesta: {response}")
+                print(f"[Gestor] Respuesta del actor: {response}")
                 
-                if response.get("status") == "ok":
+                if response.get("exito"):
                     return Respuesta(
                         topico="prestamo",
                         contenido="respuesta",
                         exito=True,
-                        mensaje=response.get("detalle", "Préstamo registrado exitosamente"),
-                        datos=response.get("datos", {})
+                        mensaje="Préstamo registrado exitosamente",
+                        datos=response.get("prestamo", {})
                     )
                 else:
                     return Respuesta(
                         topico="prestamo",
                         contenido="respuesta",
                         exito=False,
-                        mensaje=response.get("detalle", "Error al procesar préstamo"),
-                        datos={"error": response.get("error")}
+                        mensaje=response.get("error", "Error al procesar préstamo"),
+                        datos={"error": response.get("detalle")}
                     )
             except Exception as e:
                 print(f"[Gestor] Error: {e}")
@@ -136,29 +137,29 @@ class GestorCarga:
                 req = self.context.socket(zmq.REQ)
                 req.RCVTIMEO = 5000
                 req.SNDTIMEO = 5000
-                req.connect("tcp://gestor_almacenamiento:5570")
+                req.connect("tcp://actor_renovacion:5561")
                 
-                req.send_json({"action": "actualizar_renovacion", "isbn": isbn, "usuario": usuario})
+                req.send_json({"isbn": isbn, "usuario": usuario})
                 response = req.recv_json()
                 req.close()
                 
-                print(f"[Gestor] Respuesta: {response}")
+                print(f"[Gestor] Respuesta del actor: {response}")
                 
-                if response.get("status") == "ok":
+                if response.get("exito"):
                     return Respuesta(
                         topico="renovacion",
                         contenido="respuesta",
                         exito=True,
                         mensaje="Renovación completada exitosamente",
-                        datos=response.get("datos", {})
+                        datos=response.get("renovacion", {})
                     )
                 else:
                     return Respuesta(
                         topico="renovacion",
                         contenido="respuesta",
                         exito=False,
-                        mensaje=response.get("detalle", "Error al renovar"),
-                        datos={"error": response.get("error")}
+                        mensaje=response.get("error", "Error al renovar"),
+                        datos={}
                     )
             except Exception as e:
                 print(f"[Gestor] Error: {e}")
@@ -176,29 +177,29 @@ class GestorCarga:
                 req = self.context.socket(zmq.REQ)
                 req.RCVTIMEO = 5000
                 req.SNDTIMEO = 5000
-                req.connect("tcp://gestor_almacenamiento:5570")
+                req.connect("tcp://actor_devolucion:5562")
                 
-                req.send_json({"action": "aplicar_devolucion", "isbn": isbn, "usuario": usuario})
+                req.send_json({"isbn": isbn, "usuario": usuario})
                 response = req.recv_json()
                 req.close()
                 
-                print(f"[Gestor] Respuesta: {response}")
+                print(f"[Gestor] Respuesta del actor: {response}")
                 
-                if response.get("status") == "ok":
+                if response.get("exito"):
                     return Respuesta(
                         topico="devolucion",
                         contenido="respuesta",
                         exito=True,
-                        mensaje=response.get("detalle", "Devolución procesada exitosamente"),
-                        datos=response.get("datos", {})
+                        mensaje="Devolución procesada exitosamente",
+                        datos={}
                     )
                 else:
                     return Respuesta(
                         topico="devolucion",
                         contenido="respuesta",
                         exito=False,
-                        mensaje=response.get("detalle", "Error al procesar devolución"),
-                        datos={"error": response.get("error")}
+                        mensaje=response.get("error", "Error al procesar devolución"),
+                        datos={}
                     )
             except Exception as e:
                 print(f"[Gestor] Error: {e}")
@@ -230,7 +231,7 @@ class GestorCarga:
     def responder_cliente(self, respuesta: Respuesta) -> None:
         respuesta_dict = respuesta.to_dict() if hasattr(respuesta, 'to_dict') else respuesta.__dict__
         print(f"[Gestor] Enviando respuesta: {respuesta_dict}")
-        self.replier.reply(respuesta_dict)
+        self.replier.reply(None, respuesta_dict)
         print("[Gestor] Respuesta enviada")
 
 

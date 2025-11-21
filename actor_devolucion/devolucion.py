@@ -58,31 +58,53 @@ def main():
     
     # Conectar al publisher del gestor de carga
     gestor_pub_addr = os.getenv("GESTOR_CARGA_PUB_ADDR", "tcp://gestor_carga:5556")
-    print(f"[ActorDevolucion] Conectando a {gestor_pub_addr}")
     socket_sub.connect(gestor_pub_addr)
-    
-    # Suscribirse al tópico "devolucion"
     socket_sub.setsockopt_string(zmq.SUBSCRIBE, "devolucion")
-    print("[ActorDevolucion] Suscrito al tópico 'devolucion'")
+    
+    # REP socket para peticiones síncronas del gestor
+    socket_rep = context.socket(zmq.REP)
+    socket_rep.bind("tcp://*:5562")
+    
+    poller = zmq.Poller()
+    poller.register(socket_sub, zmq.POLLIN)
+    poller.register(socket_rep, zmq.POLLIN)
+    
+    print(f"[ActorDevolucion] PUB/SUB conectado a {gestor_pub_addr}, REP escuchando en 5562")
     
     # Crear instancia del actor
     actor = Devolucion()
-    print("[ActorDevolucion] Listo para procesar devoluciones")
     
     # Bucle principal
     while True:
         try:
-            # Recibir mensaje (formato: "topico {json}")
-            raw_msg = socket_sub.recv_string()
-            parts = raw_msg.split(" ", 1)
+            events = dict(poller.poll())
             
-            if len(parts) == 2:
-                _, data_str = parts
-                msg = json.loads(data_str)
+            if socket_sub in events:
+                # Recibir mensaje PUB/SUB (formato: "topico {json}")
+                raw_msg = socket_sub.recv_string()
+                parts = raw_msg.split(" ", 1)
                 
-                print(f"[ActorDevolucion] Mensaje recibido: {msg}")
-                result = actor.handle(msg)
-                print(f"[ActorDevolucion] Resultado: {result}")
+                if len(parts) == 2:
+                    _, data_str = parts
+                    msg = json.loads(data_str)
+                    result = actor.handle(msg)
+                    print(f"[ActorDevolucion] Evento resultado: {result}")
+            
+            if socket_rep in events:
+                # Recibir petición REQ/REP
+                try:
+                    req = socket_rep.recv_json()
+                    result = actor.handle(req)
+                    # Normalizar respuesta para gestor_carga
+                    response = {
+                        "exito": result.get("ok", False),
+                        "devolucion": result.get("detalle", ""),
+                        "error": result.get("error")
+                    }
+                    socket_rep.send_json(response)
+                    print(f"[ActorDevolucion] Req/Rep resultado: {response}")
+                except Exception as e:
+                    socket_rep.send_json({"exito": False, "error": str(e)})
             
         except KeyboardInterrupt:
             print("\n[ActorDevolucion] Deteniendo...")
@@ -92,6 +114,7 @@ def main():
     
     # Limpieza
     socket_sub.close()
+    socket_rep.close()
     context.term()
     print("[ActorDevolucion] Terminado")
 
